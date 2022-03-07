@@ -18,22 +18,21 @@ pub fn convert_decimal_to_binary(decimal: usize, width: usize) -> Vec<u32> {
 
 
 pub fn parse_fasta_file() -> std::io::Result<()> {
-    //let fasta_filepath: &Path = Path::new("./data/egfr/egfr.fa.gz");
-    let fasta_filepath: &Path = Path::new("./data/grch37/hg19.fa.gz");
+    let fasta_filepath: &Path = Path::new("./data/egfr/egfr.fa.gz");
+    //let fasta_filepath: &Path = Path::new("./data/grch37/hg19.fa.gz");
     let f: File = File::open(fasta_filepath).expect("Error reading FASTA file.");
     let reader: BufReader<GzDecoder<File>> = BufReader::new(GzDecoder::new(f));
 
     let mut count: usize = 0;
     let mut unique_bases: HashSet<char> = HashSet::new();
 
-    for line in reader.lines() {
-        let line = line?;
+    for line in reader.lines().map(|l| l.unwrap()) {
         if (&line).starts_with(">") {
             println!("{}", &line);
             continue;
         }
 
-        unique_bases.extend(line.chars());
+        unique_bases.extend((&line).chars());
         count += (&line).len();
     }
 
