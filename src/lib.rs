@@ -9,20 +9,29 @@ use std::str::from_utf8;
 #[allow(dead_code)]
 pub fn convert_decimal_to_binary(decimal: usize, width: usize) -> Vec<u32> {
     const RADIX: u32 = 2;
-    let binary: Vec<u32> = format!("{decimal:0width$b}")
-                            .chars()
-                            .flat_map(|c| c.to_digit(RADIX))
-                            .collect();
-    
-    binary
+
+    format!("{decimal:0width$b}")
+            .chars()
+            .flat_map(|c| c.to_digit(RADIX))
+            .collect()
 }
 
 
-pub fn parse_file() -> std::io::Result<()> {
+pub fn decode_in_utf8(encoded_message: &[u8]) -> &str {
+    match from_utf8(encoded_message) {
+        Ok(decoded_message) => decoded_message,
+        Err(e) => panic!("Invalid UTF-8 sequence found in FASTA file: {}.", e),
+    }
+}
+
+
+pub fn parse_fasta_file() -> std::io::Result<()> {
     let fasta_filepath: &Path = Path::new("./data/egfr/egfr.fa.gz");
     let f: File = File::open(fasta_filepath).expect("Error reading FASTA file.");
     const CAPACITY: usize = 10*1000;
     let mut reader: BufReader<GzDecoder<File>> = BufReader::with_capacity(CAPACITY, GzDecoder::new(f));
+
+    let mut start: bool = false;
 
     loop {
         let buffer: &[u8] = reader.fill_buf()?;
@@ -32,12 +41,21 @@ pub fn parse_file() -> std::io::Result<()> {
             break;
         }
 
-        let message: &str = match from_utf8(buffer) {
-            Ok(buffer_decoded) => buffer_decoded,
-            Err(e) => panic!("Invalid UTF-8 sequence found in FASTA file: {}.", e),
+        let message = if !start {
+            match buffer.iter().position(|&x| x == b'\n') {
+                Some(idx) => {
+                    start = true;
+                    decode_in_utf8(&buffer[idx+1..])
+                },
+                None => {
+                    continue;
+                },
+            }
+        } else {
+            decode_in_utf8(buffer)
         };
 
-        println!("{}", message.chars().count());
+        println!("{}", message);
 
         reader.consume(length);
     }
