@@ -1,0 +1,12 @@
+[package]
+name = "chaos-game-representation"
+version = "0.1.0"
+authors = ["Jeya Balaji Balasubramanian <jeyabbalas@gmail.com>"]
+license = "MIT"
+license-file = "LICENSE.txt"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+flate2 = "1.0.22"
