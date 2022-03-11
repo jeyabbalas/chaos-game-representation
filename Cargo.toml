@@ -10,3 +10,4 @@ edition = "2021"
 
 [dependencies]
 flate2 = "1.0.22"
+rand = "0.8.5"
