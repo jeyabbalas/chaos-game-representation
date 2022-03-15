@@ -10,5 +10,5 @@ edition = "2021"
 
 [dependencies]
 enum-iterator = "0.7.0"
-flate2 = "1.0.22"
 rand = "0.8.5"
+rev_lines = "0.2.1"
