@@ -1,8 +1,10 @@
 use std::collections::HashMap;
-use std::convert::TryInto;
 use std::fs::File;
 use std::io::prelude::*;
 use std::io::BufReader;
+use std::ops::Add;
+use std::ops::Div;
+use std::ops::Sub;
 use enum_iterator::IntoEnumIterator;
 use rand::prelude::ThreadRng;
 use rand::{
@@ -35,62 +37,69 @@ impl Distribution<Nucleotide> for Standard {
 }
 
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Point<T> {
+    pub x: T, 
+    pub y: T, 
+}
+
+
+impl<T: Add<Output = T>> Add for Point<T> {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Self {
+            x: self.x + rhs.x, 
+            y: self.y + rhs.y, 
+        }
+    }
+}
+
+
+impl<T: Sub<Output = T>> Sub for Point<T> {
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        Self {
+            x: self.x - rhs.x, 
+            y: self.y - rhs.y, 
+        }
+    }
+}
+
+
+impl<T: Div<Output = T> + Copy> Div<T> for Point<T> {
+    type Output = Self;
+
+    fn div(self, rhs: T) -> Self::Output {
+        Self {
+            x: self.x / rhs, 
+            y: self.y / rhs, 
+        }
+    }
+}
+
+
 pub struct ChaosGameRepresentation {
-    forward: Vec<[f64;2]>,
-    backward: Vec<[f64;2]>,
+    forward: Vec<Point<f64>>,
+    backward: Vec<Point<f64>>,
 }
 
 
 impl ChaosGameRepresentation {
-    pub fn from_fasta_file(filename: &str) -> std::io::Result<ChaosGameRepresentation> {
+    pub fn from_fasta_file(filename: &str) -> ChaosGameRepresentation {
         ChaosGameRepresentation::construct_chaos_game_representation(filename)
     }
 
-    fn convert_decimal_to_binary(decimal: usize) -> [f64; 2] {
-        const RADIX: u32 = 2;
-        const WIDTH: usize = 2;
+    fn compute_cgr_edges() -> HashMap<Nucleotide, Point<f64>> {
+        let mut cgr_edges: HashMap<Nucleotide, Point<f64>> = HashMap::new();
     
-        format!("{decimal:0WIDTH$b}")
-                .chars()
-                .flat_map(|c| c.to_digit(RADIX))
-                .map(|n| n as f64)
-                .collect::<Vec<f64>>()
-                .try_into()
-                .expect("Array wrong size compared to the iterator.")
-    }
-
-    fn compute_cgr_edges() -> HashMap<Nucleotide, [f64; 2]> {
-        let mut cgr_edges: HashMap<Nucleotide, [f64; 2]> = HashMap::new();
-    
-        for (idx, base) in Nucleotide::into_enum_iter().enumerate() {
-            cgr_edges.insert(base, ChaosGameRepresentation::convert_decimal_to_binary(idx));
-        }
+        cgr_edges.insert(Nucleotide::A, Point { x: 0.0, y: 0.0} );
+        cgr_edges.insert(Nucleotide::C, Point { x: 0.0, y: 1.0} );
+        cgr_edges.insert(Nucleotide::G, Point { x: 1.0, y: 0.0} );
+        cgr_edges.insert(Nucleotide::T, Point { x: 1.0, y: 1.0} );
     
         cgr_edges
-    }
-
-    fn add(a: [f64; 2], b: [f64; 2]) -> [f64; 2] {
-        let mut c: [f64; 2] = [0.0; 2];
-        for (i, (a_val, b_val)) in a.iter().zip(&b).enumerate() {
-            c[i] = a_val + b_val;
-        }
-        c
-    }
-
-    fn subtract(a: [f64; 2], b: [f64; 2]) -> [f64; 2] {
-        let mut c: [f64; 2] = [0.0; 2];
-        for (i, (a_val, b_val)) in a.iter().zip(&b).enumerate() {
-            c[i] = a_val - b_val;
-        }
-        c
-    }
-
-    fn divide(a: [f64; 2], b: f64) -> [f64; 2] {
-        let mut c: [f64; 2] = [0.0; 2];
-        for (i, a_val) in a.iter().enumerate() {
-            c[i] = a_val/b;
-        }
-        c
     }
 
     fn str_to_nucleotides(s: &str) -> Vec<Nucleotide> {
@@ -108,28 +117,25 @@ impl ChaosGameRepresentation {
         }).collect()
     }
 
-    fn construct_chaos_game_representation(filename: &str) -> std::io::Result<ChaosGameRepresentation> {
-        let cgr_edges: HashMap<Nucleotide, [f64; 2]> = ChaosGameRepresentation::compute_cgr_edges();
-        let reader = BufReader::new(File::open(filename)?);
-        let rev_lines = RevLines::new(BufReader::new(File::open(filename)?)).unwrap();
+    fn construct_chaos_game_representation(filename: &str) -> ChaosGameRepresentation {
+        let cgr_edges: HashMap<Nucleotide, Point<f64>> = ChaosGameRepresentation::compute_cgr_edges();
+        let reader = BufReader::new(File::open(filename).expect("Error reading FASTA file."));
+        let rev_lines = RevLines::new(BufReader::new(File::open(filename).expect("Error reading FASTA file."))).unwrap();
 
-        let mut forward: Vec<[f64;2]> = Vec::new();
-        let mut backward: Vec<[f64;2]> = Vec::new();
+        let mut forward = Vec::new();
+        let mut backward = Vec::new();
 
-        let mut prev_point: [f64; 2] = [0.5; 2];
+        let mut prev_point = Point { x: 0.5, y: 0.5 };
 
-        let add = ChaosGameRepresentation::add;
-        let subtract = ChaosGameRepresentation::subtract;
-        let divide = ChaosGameRepresentation::divide;
+        let str_to_nucleotides = ChaosGameRepresentation::str_to_nucleotides;
 
         for line in reader.lines().map(|l| l.unwrap()) {
             if (&line).starts_with(">") {
                 continue;
             }
 
-            for base in ChaosGameRepresentation::str_to_nucleotides(&line) {
-                prev_point = add(prev_point, 
-                                 divide(subtract(cgr_edges[&base], prev_point), 2.0));
+            for base in str_to_nucleotides(&line) {
+                prev_point = prev_point + ((cgr_edges[&base] - prev_point) / 2.0);
                 forward.push(prev_point);
             }
         }
@@ -139,23 +145,20 @@ impl ChaosGameRepresentation {
                 continue;
             }
 
-            for base in ChaosGameRepresentation::str_to_nucleotides(&(&line).chars().rev().collect::<String>()) {
-                prev_point = add(prev_point, 
-                                 divide(subtract(cgr_edges[&base], prev_point), 2.0));
+            for base in str_to_nucleotides(&(&line).chars().rev().collect::<String>()) {
+                prev_point = prev_point + ((cgr_edges[&base] - prev_point) / 2.0);
                 backward.push(prev_point);
             }
         }
     
-        Ok(ChaosGameRepresentation { forward, backward })
+        ChaosGameRepresentation { forward, backward }
     }
 }
 
 
 pub fn run(filename_fasta: &str){
-    let cgr = ChaosGameRepresentation::from_fasta_file(filename_fasta).expect("Error in parsing FASTA file.");
+    let cgr = ChaosGameRepresentation::from_fasta_file(filename_fasta);
 
     println!("{}", &cgr.forward.len());
     println!("{}", &cgr.backward.len());
 }
-
-
