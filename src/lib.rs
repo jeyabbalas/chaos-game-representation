@@ -1,11 +1,12 @@
 use std::collections::HashMap;
 use std::fs::File;
+use std::path::Path;
 use std::io::prelude::*;
 use std::io::BufReader;
-use std::ops::Add;
-use std::ops::Div;
-use std::ops::Sub;
+use std::ops::{Add, Div, Sub};
+
 use enum_iterator::IntoEnumIterator;
+use plotters::prelude::*;
 use rand::prelude::ThreadRng;
 use rand::{
     distributions::{Distribution, Standard, WeightedIndex},
@@ -81,6 +82,7 @@ impl<T: Div<Output = T> + Copy> Div<T> for Point<T> {
 
 
 pub struct ChaosGameRepresentation {
+    name: String, 
     forward: Vec<Point<f64>>,
     backward: Vec<Point<f64>>,
 }
@@ -88,10 +90,11 @@ pub struct ChaosGameRepresentation {
 
 impl ChaosGameRepresentation {
     pub fn from_fasta_file(filename: &str) -> ChaosGameRepresentation {
-        ChaosGameRepresentation::construct_chaos_game_representation(filename)
+        let filepath = Path::new(filename);
+        ChaosGameRepresentation::construct_chaos_game_representation(&filepath)
     }
 
-    fn compute_cgr_edges() -> HashMap<Nucleotide, Point<f64>> {
+    fn get_cgr_edges() -> HashMap<Nucleotide, Point<f64>> {
         let mut cgr_edges: HashMap<Nucleotide, Point<f64>> = HashMap::new();
     
         cgr_edges.insert(Nucleotide::A, Point { x: 0.0, y: 0.0} );
@@ -112,15 +115,17 @@ impl ChaosGameRepresentation {
             'C' => Nucleotide::C, 
             'G' => Nucleotide::G, 
             'T' => Nucleotide::T, 
-            'N' => dna_bases[dist_n.sample(&mut rng)],
+            'N' => dna_bases[dist_n.sample(&mut rng)], 
             unk => panic!("Nucleotide base of unsupported type found in FASTA file: {}.", unk), 
         }).collect()
     }
 
-    fn construct_chaos_game_representation(filename: &str) -> ChaosGameRepresentation {
-        let cgr_edges: HashMap<Nucleotide, Point<f64>> = ChaosGameRepresentation::compute_cgr_edges();
-        let reader = BufReader::new(File::open(filename).expect("Error reading FASTA file."));
-        let rev_lines = RevLines::new(BufReader::new(File::open(filename).expect("Error reading FASTA file."))).unwrap();
+    fn construct_chaos_game_representation(filepath: &Path) -> ChaosGameRepresentation {
+        let name = filepath.file_stem().unwrap().to_str().unwrap().to_string();
+
+        let cgr_edges: HashMap<Nucleotide, Point<f64>> = ChaosGameRepresentation::get_cgr_edges();
+        let reader = BufReader::new(File::open(filepath).expect("Error reading FASTA file."));
+        let rev_lines = RevLines::new(BufReader::new(File::open(filepath).expect("Error reading FASTA file backwards."))).unwrap();
 
         let mut forward = Vec::new();
         let mut backward = Vec::new();
@@ -151,14 +156,44 @@ impl ChaosGameRepresentation {
             }
         }
     
-        ChaosGameRepresentation { forward, backward }
+        ChaosGameRepresentation { name, forward, backward }
+    }
+}
+
+
+impl ChaosGameRepresentation {
+    pub fn plot(&self, outdir: &Path, dimension: u32, margin: u32) -> Result<(), Box<dyn std::error::Error>> {
+        let filepath_forward_cgr = outdir.join(format!("{}_forward.png", self.name));
+        let filepath_backward_cgr = outdir.join(format!("{}_backward.png", self.name));
+
+        self.plot_cgr(&filepath_forward_cgr,dimension, margin, true)?;
+        self.plot_cgr(&filepath_backward_cgr, dimension, margin, false)?;
+
+        Ok(())
+    }
+
+    fn plot_cgr(&self, filepath: &Path, dimension: u32, margin: u32, forward: bool) -> Result<(), Box<dyn std::error::Error>> {
+        let cgr = if forward {
+            &self.forward
+        } else {
+            &self.backward
+        };
+
+        let root = BitMapBackend::new(&filepath, (dimension+margin, dimension+margin)).into_drawing_area();
+        root.fill(&WHITE)?;
+        let root = root.margin(margin, margin, margin, margin);
+
+        let mut chart = ChartBuilder::on(&root)
+        .build_cartesian_2d(0.0..1.0_f64, 1.0..0.0_f64)?;
+
+        chart.draw_series(cgr.iter().cloned().map(|point| Pixel::new((point.x, point.y), &BLACK)))?;
+        Ok(())
     }
 }
 
 
 pub fn run(filename_fasta: &str){
+    let outdir = Path::new("./data/figures");
     let cgr = ChaosGameRepresentation::from_fasta_file(filename_fasta);
-
-    println!("{}", &cgr.forward.len());
-    println!("{}", &cgr.backward.len());
+    cgr.plot(outdir, 1024, 30).expect("Error in plotting");
 }
