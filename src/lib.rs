@@ -5,7 +5,6 @@ use std::io::prelude::*;
 use std::io::BufReader;
 use std::ops::{Add, Div, Sub};
 
-use enum_iterator::IntoEnumIterator;
 use plotters::prelude::*;
 use rand::prelude::ThreadRng;
 use rand::{
@@ -16,7 +15,7 @@ use rand::{
 use rev_lines::RevLines;
 
 
-#[derive(Debug, Hash, Copy, Clone, IntoEnumIterator, PartialEq, Eq)]
+#[derive(Debug, Hash, Copy, Clone, PartialEq, Eq)]
 enum Nucleotide {
     A, 
     C, 
@@ -97,10 +96,10 @@ impl ChaosGameRepresentation {
     fn get_cgr_edges() -> HashMap<Nucleotide, Point<f64>> {
         let mut cgr_edges: HashMap<Nucleotide, Point<f64>> = HashMap::new();
     
-        cgr_edges.insert(Nucleotide::A, Point { x: 0.0, y: 0.0} );
-        cgr_edges.insert(Nucleotide::C, Point { x: 0.0, y: 1.0} );
-        cgr_edges.insert(Nucleotide::G, Point { x: 1.0, y: 0.0} );
-        cgr_edges.insert(Nucleotide::T, Point { x: 1.0, y: 1.0} );
+        cgr_edges.insert(Nucleotide::A, Point { x: 0.0, y: 0.0 } );
+        cgr_edges.insert(Nucleotide::C, Point { x: 0.0, y: 1.0 } );
+        cgr_edges.insert(Nucleotide::G, Point { x: 1.0, y: 0.0 } );
+        cgr_edges.insert(Nucleotide::T, Point { x: 1.0, y: 1.0 } );
     
         cgr_edges
     }
@@ -130,9 +129,9 @@ impl ChaosGameRepresentation {
         let mut forward = Vec::new();
         let mut backward = Vec::new();
 
-        let mut prev_point = Point { x: 0.5, y: 0.5 };
-
         let str_to_nucleotides = ChaosGameRepresentation::str_to_nucleotides;
+
+        let mut prev_point = Point { x: 0.5, y: 0.5 };
 
         for line in reader.lines().map(|l| l.unwrap()) {
             if (&line).starts_with(">") {
@@ -144,6 +143,8 @@ impl ChaosGameRepresentation {
                 forward.push(prev_point);
             }
         }
+
+        prev_point = Point { x: 0.5, y: 0.5 };
 
         for line in rev_lines {
             if (&line).len() == 0 || (&line).starts_with(">") {
@@ -184,7 +185,7 @@ impl ChaosGameRepresentation {
         let root = root.margin(margin, margin, margin, margin);
 
         let mut chart = ChartBuilder::on(&root)
-        .build_cartesian_2d(0.0..1.0_f64, 1.0..0.0_f64)?;
+        .build_cartesian_2d(0.0..1.0, 1.0..0.0)?;
 
         chart.draw_series(cgr.iter().cloned().map(|point| Pixel::new((point.x, point.y), &BLACK)))?;
         Ok(())
