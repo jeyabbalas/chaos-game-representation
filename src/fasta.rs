@@ -1,7 +1,8 @@
 use std::cmp::min;
-use std::io::prelude::*;
 use std::fs::File;
+use std::io::prelude::*;
 use std::io::{BufReader, Result, SeekFrom};
+use std::path::{Path, PathBuf};
 
 
 static DEFAULT_SIZE: usize = 4096;
@@ -10,7 +11,7 @@ static LF_BYTE: u8 = '\n' as u8;
 static CR_BYTE: u8 = '\r' as u8;
 
 
-pub struct ForwardReader<R> {
+pub struct ForwardFastaReader<R> {
     reader: BufReader<R>, 
     end_byte: u64,
     cursor_position: u64, 
@@ -18,20 +19,22 @@ pub struct ForwardReader<R> {
 }
 
 
-impl<R:Seek+Read> ForwardReader<R> {
-    pub fn new(reader: BufReader<R>, start_byte: u64, end_byte: u64) -> Result<ForwardReader<R>> {
-        ForwardReader::with_capacity(DEFAULT_SIZE, reader, start_byte, end_byte)
+impl<R:Seek+Read> ForwardFastaReader<R> {
+    pub fn new(reader: BufReader<R>, fasta_sequence: &FastaSequence) -> Result<ForwardFastaReader<R>> {
+        ForwardFastaReader::with_capacity(DEFAULT_SIZE, reader, fasta_sequence.get_start_byte(), fasta_sequence.get_end_byte())
     }
 
-    pub fn with_capacity(capacity: usize, mut reader: BufReader<R>, start_byte: u64, end_byte: u64) -> Result<ForwardReader<R>> {
+    pub fn with_capacity(capacity: usize, mut reader: BufReader<R>, start_byte: u64, end_byte: u64) -> Result<ForwardFastaReader<R>> {
         if start_byte > end_byte {
             panic!("Start position of read cannot come after the end position of the sequence.");
         }
 
-        Ok(ForwardReader {
+        let cursor_position = reader.seek(SeekFrom::Start(start_byte))?;
+
+        Ok(ForwardFastaReader {
             reader, 
             end_byte, 
-            cursor_position: start_byte, 
+            cursor_position, 
             buffer_size: capacity as u64, 
         })
     }
@@ -46,7 +49,7 @@ impl<R:Seek+Read> ForwardReader<R> {
 }
 
 
-impl<R:Read+Seek> Iterator for ForwardReader<R> {
+impl<R:Read+Seek> Iterator for ForwardFastaReader<R> {
     type Item = String;
     
     fn next(&mut self) -> Option<String> {
@@ -69,7 +72,7 @@ impl<R:Read+Seek> Iterator for ForwardReader<R> {
                             let mut offset = size - 1 - idx as u64;
 
                             // handling CRLF combos
-                            if buffer[idx] == CR_BYTE && idx < size - 1 && buffer[idx] == LF_BYTE {
+                            if buffer[idx] == CR_BYTE && (idx as u64) < (size - 1) && buffer[idx] == LF_BYTE {
                                 offset += 1;
                             }
 
@@ -85,7 +88,7 @@ impl<R:Read+Seek> Iterator for ForwardReader<R> {
                         }
                     }
                 },
-                Err(_) => None,
+                Err(_) => return None,
             }
         }
 
@@ -94,7 +97,7 @@ impl<R:Read+Seek> Iterator for ForwardReader<R> {
 }
 
 
-pub struct ReverseReader<R> {
+pub struct ReverseFastaReader<R> {
     reader: BufReader<R>, 
     start_byte: u64,
     cursor_position: u64, 
@@ -102,20 +105,22 @@ pub struct ReverseReader<R> {
 }
 
 
-impl<R:Seek+Read> ReverseReader<R> {
-    pub fn new(reader: BufReader<R>, start_byte: u64, end_byte: u64) -> Result<ReverseReader<R>> {
-        ReverseReader::with_capacity(DEFAULT_SIZE, reader, start_byte, end_byte)
+impl<R:Seek+Read> ReverseFastaReader<R> {
+    pub fn new(reader: BufReader<R>, fasta_sequence: &FastaSequence) -> Result<ReverseFastaReader<R>> {
+        ReverseFastaReader::with_capacity(DEFAULT_SIZE, reader, fasta_sequence.get_start_byte(), fasta_sequence.get_end_byte())
     }
 
-    pub fn with_capacity(capacity: usize, mut reader: BufReader<R>, start_byte: u64, end_byte: u64) -> Result<ReverseReader<R>> {
+    pub fn with_capacity(capacity: usize, mut reader: BufReader<R>, start_byte: u64, end_byte: u64) -> Result<ReverseFastaReader<R>> {
         if start_byte > end_byte {
             panic!("Start position of read cannot come after the end position of the sequence.");
         }
 
-        Ok(ReverseReader {
+        let cursor_position = reader.seek(SeekFrom::Start(end_byte))?;
+
+        Ok(ReverseFastaReader {
             reader, 
             start_byte, 
-            cursor_position: end_byte, 
+            cursor_position,  
             buffer_size: capacity as u64, 
         })
     }
@@ -135,7 +140,7 @@ impl<R:Seek+Read> ReverseReader<R> {
 }
 
 
-impl<R:Read+Seek> Iterator for ReverseReader<R> {
+impl<R:Read+Seek> Iterator for ReverseFastaReader<R> {
     type Item = String;
     
     fn next(&mut self) -> Option<String> {
@@ -149,7 +154,7 @@ impl<R:Read+Seek> Iterator for ReverseReader<R> {
                 return None;
             }
 
-            let size = min(self.buffer_size, self.start_byte - self.cursor_position);
+            let size = min(self.buffer_size, self.cursor_position - self.start_byte);
 
             match self.read_to_buffer(size) {
                 Ok(buffer) => {
@@ -174,7 +179,7 @@ impl<R:Read+Seek> Iterator for ReverseReader<R> {
                         }
                     }
                 },
-                Err(_) => None,
+                Err(_) => return None,
             }
         }
 
@@ -183,27 +188,54 @@ impl<R:Read+Seek> Iterator for ReverseReader<R> {
 }
 
 
-pub struct FastaSequenceReader<R> {
+pub struct FastaSequence {
+    filepath: PathBuf, 
     sequence_id: String, 
-    start_byte: u64,
-    end_byte: u64,
-    forward_reader: ForwardReader<R>, 
-    reverse_reader: ReverseReader<R>, 
+    start_byte: u64, 
+    end_byte: u64, 
 }
 
 
-pub struct FastaReader<R> {
-    sequences: Vec<FastaSequenceReader<R>>, 
-}
-
-
-impl<R:Seek+Read> FastaReader<R> {
-    pub fn new(reader: BufReader<R>) -> Result<FastaReader<R>, Box<dyn std::error::Error>> {
-        
+impl FastaSequence {
+    pub fn get_sequence_id(&self) -> &String {
+        &self.sequence_id
     }
 
-    pub fn from_file(filepath: &Path) -> Result<FastaReader<R>, Box<dyn std::error::Error>> {
-        let reader = BufReader::new(File::open(filepath)?;
+    pub fn get_start_byte(&self) -> u64 {
+        self.start_byte
+    }
+
+    pub fn get_end_byte(&self) -> u64 {
+        self.end_byte
+    }
+}
+
+
+impl FastaSequence {
+    pub fn build_forward_reader(&self) -> Result<ForwardFastaReader<File>> {
+        let reader = BufReader::new(File::open(&self.filepath)
+                .expect("Error opening FASTA file when building forward reader."));
+
+        ForwardFastaReader::new(reader, self)
+    }
+
+    pub fn build_reverse_reader(&self) -> Result<ReverseFastaReader<File>> {
+        let reader = BufReader::new(File::open(&self.filepath)
+                .expect("Error opening FASTA file when building reverse reader."));
+
+        ReverseFastaReader::new(reader, self)
+    }
+}
+
+
+pub struct Fasta{
+    sequences: Vec<FastaSequence>, 
+}
+
+
+impl Fasta {
+    pub fn new(fasta_filepath: &Path) -> Result<Fasta> {
+        let reader = BufReader::new(File::open(fasta_filepath).expect("Error opening FASTA file."));
         let mut sequences: Vec<FastaSequence> = Vec::new();
         
         let mut sequence_id = String::new();
@@ -227,11 +259,14 @@ impl<R:Seek+Read> FastaReader<R> {
                     // remove current header line chars + header line feed + 
                     // previous sequence end line feed + blank lines.
                     end_byte = cursor_position - (line.len() + 2) as u64 - blank_line_counters; 
-                    sequences.push(FastaSequenceReader {
+                    
+                    sequences.push(FastaSequence {
+                        filepath: fasta_filepath.to_path_buf(), 
                         sequence_id, 
                         start_byte, 
                         end_byte, 
                     });
+
                     blank_line_counters = 0;
                 }
                 
@@ -251,220 +286,225 @@ impl<R:Seek+Read> FastaReader<R> {
         if record {
             // remove last line feed character + blank lines
             end_byte = cursor_position - 1 - blank_line_counters; 
-            sequences.push(FastaSequenceReader {
+
+            sequences.push(FastaSequence {
+                filepath: fasta_filepath.to_path_buf(), 
                 sequence_id, 
                 start_byte, 
                 end_byte, 
             });
         }
 
-        Ok(FastaReader {
+        Ok(Fasta {
             sequences, 
         })
     }
 }
 
 
-impl FastaSequenceReader {
-    pub fn get_sequences(&self) -> &Vec<FastaSequenceReader> {
-        &self.sequences
+impl Fasta {
+    pub fn get_sequences(&self) -> &Vec<FastaSequence> {
+        return &self.sequences
     }
 }
 
 
-
 #[cfg(test)]
 mod tests {
-    use crate::fasta::FastaReader;
-    
-    use std::io::prelude::*;
-    use std::io::{BufReader, SeekFrom};
-    use std::fs::File;
+    use crate::fasta::Fasta;
     use std::path::Path;
 
     #[test]
     pub fn parse_single_fasta() {
         let filepath = Path::new("./tests/data/single_fasta.fa");
-        let reader = BufReader::new(File::open(filepath).expect("Error opening FASTA file."));
-        let fasta_reader = FastaReader::new(reader).expect("FastaReader error");
+        let fasta_reader = Fasta::new(filepath).expect("Error landmarking FASTA file.");
         
         let sequences = fasta_reader.get_sequences();
         assert_eq!(sequences.len(), 1);
-        assert_eq!(sequences[0].sequence_id, "sequenceID-001");
+        assert_eq!(sequences[0].get_sequence_id(), "sequenceID-001");
         
-        let mut f = File::open("./tests/data/single_fasta.fa").expect("Error opening FASTA file.");
-        let mut buffer = [0; 5];
+        let mut forward_reader = sequences[0].build_forward_reader().expect("Error building forward reader");
 
-        f.seek(SeekFrom::Start(sequences[0].start_byte)).expect("Error seeking.");
-        f.read(&mut buffer[..]).expect("Error reading FASTA file");
-        let seq = std::str::from_utf8(&buffer).expect("Invalid UTF-8 sequence.");
-        assert_eq!(seq, "AAGTA");
+        assert_eq!(forward_reader.next(), Some("AAGTAGGAATAATATCTTATCATTATAGATAAAAACCTTCTGAATTTGCTTAGTGTGTAT".to_string()));
+        assert_eq!(forward_reader.next(), Some("ACGACTAGACATATATCAGCTCGCCGATTATTTGGATTATTCCCTG".to_string()));
+        assert_eq!(forward_reader.next(), None);
 
-        f.seek(SeekFrom::Start(sequences[0].end_byte - 5)).expect("Error seeking.");
-        f.read(&mut buffer[..]).expect("Error reading FASTA file");
-        let seq = std::str::from_utf8(&buffer).expect("Invalid UTF-8 sequence.");
-        assert_eq!(seq, "CCCTG");
+        let mut reverse_reader = sequences[0].build_reverse_reader().expect("Error building reverse reader");
+
+        assert_eq!(reverse_reader.next(), Some("GTCCCTTATTAGGTTTATTAGCCGCTCGACTATATACAGATCAGCA".to_string()));
+        assert_eq!(reverse_reader.next(), Some("TATGTGTGATTCGTTTAAGTCTTCCAAAAATAGATATTACTATTCTATAATAAGGATGAA".to_string()));
+        assert_eq!(reverse_reader.next(), None);
     }
 
     #[test]
     pub fn parse_anonymous_single_fasta() {
         let filepath = Path::new("./tests/data/anonymous_single_fasta.fa");
-        let reader = BufReader::new(File::open(filepath).expect("Error opening FASTA file."));
-        let fasta_reader = FastaReader::new(reader).expect("FastaReader error");
+        let fasta_reader = Fasta::new(filepath).expect("Error landmarking FASTA file.");
         
         let sequences = fasta_reader.get_sequences();
         assert_eq!(sequences.len(), 1);
-        assert_eq!(sequences[0].sequence_id, "Unknown-1");
+        assert_eq!(sequences[0].get_sequence_id(), "Unknown-1");
         
-        let mut f = File::open("./tests/data/anonymous_single_fasta.fa").expect("Error opening FASTA file.");
-        let mut buffer = [0; 5];
+        let mut forward_reader = sequences[0].build_forward_reader().expect("Error building forward reader");
 
-        f.seek(SeekFrom::Start(sequences[0].start_byte)).expect("Error seeking.");
-        f.read(&mut buffer[..]).expect("Error reading FASTA file");
-        let seq = std::str::from_utf8(&buffer).expect("Invalid UTF-8 sequence.");
-        assert_eq!(seq, "AAGTA");
+        assert_eq!(forward_reader.next(), Some("AAGTAGGAATAATATCTTATCATTATAGATAAAAACCTTCTGAATTTGCTTAGTGTGTAT".to_string()));
+        assert_eq!(forward_reader.next(), Some("ACGACTAGACATATATCAGCTCGCCGATTATTTGGATTATTCCCTG".to_string()));
+        assert_eq!(forward_reader.next(), None);
 
-        f.seek(SeekFrom::Start(sequences[0].end_byte - 5)).expect("Error seeking.");
-        f.read(&mut buffer[..]).expect("Error reading FASTA file");
-        let seq = std::str::from_utf8(&buffer).expect("Invalid UTF-8 sequence.");
-        assert_eq!(seq, "CCCTG");
+        let mut reverse_reader = sequences[0].build_reverse_reader().expect("Error building reverse reader");
+
+        assert_eq!(reverse_reader.next(), Some("GTCCCTTATTAGGTTTATTAGCCGCTCGACTATATACAGATCAGCA".to_string()));
+        assert_eq!(reverse_reader.next(), Some("TATGTGTGATTCGTTTAAGTCTTCCAAAAATAGATATTACTATTCTATAATAAGGATGAA".to_string()));
+        assert_eq!(reverse_reader.next(), None);
     }
 
     #[test]
     pub fn parse_multi_fasta() {
         let filepath = Path::new("./tests/data/multi_fasta.fa");
-        let reader = BufReader::new(File::open(filepath).expect("Error opening FASTA file."));
-        let fasta_reader = FastaReader::new(reader).expect("FastaReader error");
-        
+        let fasta_reader = Fasta::new(filepath).expect("Error landmarking FASTA file.");
+
         let sequences = fasta_reader.get_sequences();
         assert_eq!(sequences.len(), 3);
-        assert_eq!(sequences[0].sequence_id, "sequenceID-001");
-        assert_eq!(sequences[1].sequence_id, "sequenceID-002");
-        assert_eq!(sequences[2].sequence_id, "sequenceID-003");
+        assert_eq!(sequences[0].get_sequence_id(), "sequenceID-001");
+        assert_eq!(sequences[1].get_sequence_id(), "sequenceID-002");
+        assert_eq!(sequences[2].get_sequence_id(), "sequenceID-003");
         
-        let mut f = File::open("./tests/data/multi_fasta.fa").expect("Error opening FASTA file.");
-        let mut buffer = [0; 5];
+        let mut forward_reader = sequences[0].build_forward_reader().expect("Error building forward reader");
 
-        f.seek(SeekFrom::Start(sequences[0].start_byte)).expect("Error seeking.");
-        f.read(&mut buffer[..]).expect("Error reading FASTA file");
-        let seq = std::str::from_utf8(&buffer).expect("Invalid UTF-8 sequence.");
-        assert_eq!(seq, "AAGTA");
+        assert_eq!(forward_reader.next(), Some("AAGTAGGAATAATATCTTATCATTATAGATAAAAACCTTCTGAATTTGCTTAGTGTGTAT".to_string()));
+        assert_eq!(forward_reader.next(), Some("ACGACTAGACATATATCAGCTCGCCGATTATTTGGATTATTCCCTG".to_string()));
+        assert_eq!(forward_reader.next(), None);
 
-        f.seek(SeekFrom::Start(sequences[0].end_byte - 5)).expect("Error seeking.");
-        f.read(&mut buffer[..]).expect("Error reading FASTA file");
-        let seq = std::str::from_utf8(&buffer).expect("Invalid UTF-8 sequence.");
-        assert_eq!(seq, "CCCTG");
+        let mut reverse_reader = sequences[0].build_reverse_reader().expect("Error building reverse reader");
 
-        f.seek(SeekFrom::Start(sequences[1].start_byte)).expect("Error seeking.");
-        f.read(&mut buffer[..]).expect("Error reading FASTA file");
-        let seq = std::str::from_utf8(&buffer).expect("Invalid UTF-8 sequence.");
-        assert_eq!(seq, "CAGTA");
+        assert_eq!(reverse_reader.next(), Some("GTCCCTTATTAGGTTTATTAGCCGCTCGACTATATACAGATCAGCA".to_string()));
+        assert_eq!(reverse_reader.next(), Some("TATGTGTGATTCGTTTAAGTCTTCCAAAAATAGATATTACTATTCTATAATAAGGATGAA".to_string()));
+        assert_eq!(reverse_reader.next(), None);
 
-        f.seek(SeekFrom::Start(sequences[1].end_byte - 5)).expect("Error seeking.");
-        f.read(&mut buffer[..]).expect("Error reading FASTA file");
-        let seq = std::str::from_utf8(&buffer).expect("Invalid UTF-8 sequence.");
-        assert_eq!(seq, "TCGTC");
+        let mut forward_reader = sequences[1].build_forward_reader().expect("Error building forward reader");
 
-        f.seek(SeekFrom::Start(sequences[2].start_byte)).expect("Error seeking.");
-        f.read(&mut buffer[..]).expect("Error reading FASTA file");
-        let seq = std::str::from_utf8(&buffer).expect("Invalid UTF-8 sequence.");
-        assert_eq!(seq, "CTTCA");
+        assert_eq!(forward_reader.next(), Some("CAGTAAAGAGTGGATGTAAGAACCGTCCGATCTACCAGATGTGATAGAGGTTGCCAGTAC".to_string()));
+        assert_eq!(forward_reader.next(), Some("AAAAATTGCATAATAATTGATTAATCCTTTAATATTGTTTAGAATATATCCGTCAGATAA".to_string()));
+        assert_eq!(forward_reader.next(), Some("TCCTAAAAATAACGATATGATGGCGGAAATCGTC".to_string()));
+        assert_eq!(forward_reader.next(), None);
 
-        f.seek(SeekFrom::Start(sequences[2].end_byte - 5)).expect("Error seeking.");
-        f.read(&mut buffer[..]).expect("Error reading FASTA file");
-        let seq = std::str::from_utf8(&buffer).expect("Invalid UTF-8 sequence.");
-        assert_eq!(seq, "ATTTG");
+        let mut reverse_reader = sequences[1].build_reverse_reader().expect("Error building reverse reader");
+
+        assert_eq!(reverse_reader.next(), Some("CTGCTAAAGGCGGTAGTATAGCAATAAAAATCCT".to_string()));
+        assert_eq!(reverse_reader.next(), Some("AATAGACTGCCTATATAAGATTTGTTATAATTTCCTAATTAGTTAATAATACGTTAAAAA".to_string()));
+        assert_eq!(reverse_reader.next(), Some("CATGACCGTTGGAGATAGTGTAGACCATCTAGCCTGCCAAGAATGTAGGTGAGAAATGAC".to_string()));
+        assert_eq!(reverse_reader.next(), None);
+
+        let mut forward_reader = sequences[2].build_forward_reader().expect("Error building forward reader");
+
+        assert_eq!(forward_reader.next(), Some("CTTCAATTACCCTGCTGACGCGAGATACCTTATGCATCGAAGGTAAAGCGATGAATTTAT".to_string()));
+        assert_eq!(forward_reader.next(), Some("CCAAGGTTTTAATTTG".to_string()));
+        assert_eq!(forward_reader.next(), None);
+
+        let mut reverse_reader = sequences[2].build_reverse_reader().expect("Error building reverse reader");
+
+        assert_eq!(reverse_reader.next(), Some("GTTTAATTTTGGAACC".to_string()));
+        assert_eq!(reverse_reader.next(), Some("TATTTAAGTAGCGAAATGGAAGCTACGTATTCCATAGAGCGCAGTCGTCCCATTAACTTC".to_string()));
+        assert_eq!(reverse_reader.next(), None);
     }
-    
+
     #[test]
     pub fn parse_multi_fasta_extra_linefeeds() {
         let filepath = Path::new("./tests/data/multi_fasta_extra_linefeeds.fa");
-        let reader = BufReader::new(File::open(filepath).expect("Error opening FASTA file."));
-        let fasta_reader = FastaReader::new(reader).expect("FastaReader error");
-        
+        let fasta_reader = Fasta::new(filepath).expect("Error landmarking FASTA file.");
+
         let sequences = fasta_reader.get_sequences();
         assert_eq!(sequences.len(), 3);
-        assert_eq!(sequences[0].sequence_id, "sequenceID-001");
-        assert_eq!(sequences[1].sequence_id, "sequenceID-002");
-        assert_eq!(sequences[2].sequence_id, "sequenceID-003");
+        assert_eq!(sequences[0].get_sequence_id(), "sequenceID-001");
+        assert_eq!(sequences[1].get_sequence_id(), "sequenceID-002");
+        assert_eq!(sequences[2].get_sequence_id(), "sequenceID-003");
         
-        let mut f = File::open("./tests/data/multi_fasta_extra_linefeeds.fa").expect("Error opening FASTA file.");
-        let mut buffer = [0; 5];
+        let mut forward_reader = sequences[0].build_forward_reader().expect("Error building forward reader");
 
-        f.seek(SeekFrom::Start(sequences[0].start_byte)).expect("Error seeking.");
-        f.read(&mut buffer[..]).expect("Error reading FASTA file");
-        let seq = std::str::from_utf8(&buffer).expect("Invalid UTF-8 sequence.");
-        assert_eq!(seq, "AAGTA");
+        assert_eq!(forward_reader.next(), Some("AAGTAGGAATAATATCTTATCATTATAGATAAAAACCTTCTGAATTTGCTTAGTGTGTAT".to_string()));
+        assert_eq!(forward_reader.next(), Some("ACGACTAGACATATATCAGCTCGCCGATTATTTGGATTATTCCCTG".to_string()));
+        assert_eq!(forward_reader.next(), None);
 
-        f.seek(SeekFrom::Start(sequences[0].end_byte - 5)).expect("Error seeking.");
-        f.read(&mut buffer[..]).expect("Error reading FASTA file");
-        let seq = std::str::from_utf8(&buffer).expect("Invalid UTF-8 sequence.");
-        assert_eq!(seq, "CCCTG");
+        let mut reverse_reader = sequences[0].build_reverse_reader().expect("Error building reverse reader");
 
-        f.seek(SeekFrom::Start(sequences[1].start_byte)).expect("Error seeking.");
-        f.read(&mut buffer[..]).expect("Error reading FASTA file");
-        let seq = std::str::from_utf8(&buffer).expect("Invalid UTF-8 sequence.");
-        assert_eq!(seq, "CAGTA");
+        assert_eq!(reverse_reader.next(), Some("GTCCCTTATTAGGTTTATTAGCCGCTCGACTATATACAGATCAGCA".to_string()));
+        assert_eq!(reverse_reader.next(), Some("TATGTGTGATTCGTTTAAGTCTTCCAAAAATAGATATTACTATTCTATAATAAGGATGAA".to_string()));
+        assert_eq!(reverse_reader.next(), None);
 
-        f.seek(SeekFrom::Start(sequences[1].end_byte - 5)).expect("Error seeking.");
-        f.read(&mut buffer[..]).expect("Error reading FASTA file");
-        let seq = std::str::from_utf8(&buffer).expect("Invalid UTF-8 sequence.");
-        assert_eq!(seq, "TCGTC");
+        let mut forward_reader = sequences[1].build_forward_reader().expect("Error building forward reader");
 
-        f.seek(SeekFrom::Start(sequences[2].start_byte)).expect("Error seeking.");
-        f.read(&mut buffer[..]).expect("Error reading FASTA file");
-        let seq = std::str::from_utf8(&buffer).expect("Invalid UTF-8 sequence.");
-        assert_eq!(seq, "CTTCA");
+        assert_eq!(forward_reader.next(), Some("CAGTAAAGAGTGGATGTAAGAACCGTCCGATCTACCAGATGTGATAGAGGTTGCCAGTAC".to_string()));
+        assert_eq!(forward_reader.next(), Some("AAAAATTGCATAATAATTGATTAATCCTTTAATATTGTTTAGAATATATCCGTCAGATAA".to_string()));
+        assert_eq!(forward_reader.next(), Some("TCCTAAAAATAACGATATGATGGCGGAAATCGTC".to_string()));
+        assert_eq!(forward_reader.next(), None);
 
-        f.seek(SeekFrom::Start(sequences[2].end_byte - 5)).expect("Error seeking.");
-        f.read(&mut buffer[..]).expect("Error reading FASTA file");
-        let seq = std::str::from_utf8(&buffer).expect("Invalid UTF-8 sequence.");
-        assert_eq!(seq, "ATTTG");
+        let mut reverse_reader = sequences[1].build_reverse_reader().expect("Error building reverse reader");
+
+        assert_eq!(reverse_reader.next(), Some("CTGCTAAAGGCGGTAGTATAGCAATAAAAATCCT".to_string()));
+        assert_eq!(reverse_reader.next(), Some("AATAGACTGCCTATATAAGATTTGTTATAATTTCCTAATTAGTTAATAATACGTTAAAAA".to_string()));
+        assert_eq!(reverse_reader.next(), Some("CATGACCGTTGGAGATAGTGTAGACCATCTAGCCTGCCAAGAATGTAGGTGAGAAATGAC".to_string()));
+        assert_eq!(reverse_reader.next(), None);
+
+        let mut forward_reader = sequences[2].build_forward_reader().expect("Error building forward reader");
+
+        assert_eq!(forward_reader.next(), Some("CTTCAATTACCCTGCTGACGCGAGATACCTTATGCATCGAAGGTAAAGCGATGAATTTAT".to_string()));
+        assert_eq!(forward_reader.next(), Some("CCAAGGTTTTAATTTG".to_string()));
+        assert_eq!(forward_reader.next(), None);
+
+        let mut reverse_reader = sequences[2].build_reverse_reader().expect("Error building reverse reader");
+
+        assert_eq!(reverse_reader.next(), Some("GTTTAATTTTGGAACC".to_string()));
+        assert_eq!(reverse_reader.next(), Some("TATTTAAGTAGCGAAATGGAAGCTACGTATTCCATAGAGCGCAGTCGTCCCATTAACTTC".to_string()));
+        assert_eq!(reverse_reader.next(), None);
     }
 
     #[test]
     pub fn parse_anonymous_multi_fasta() {
         let filepath = Path::new("./tests/data/anonymous_multi_fasta.fa");
-        let reader = BufReader::new(File::open(filepath).expect("Error opening FASTA file."));
-        let fasta_reader = FastaReader::new(reader).expect("FastaReader error");
-        
+        let fasta_reader = Fasta::new(filepath).expect("Error landmarking FASTA file.");
+
         let sequences = fasta_reader.get_sequences();
         assert_eq!(sequences.len(), 3);
-        assert_eq!(sequences[0].sequence_id, "Unknown-1");
-        assert_eq!(sequences[1].sequence_id, "Unknown-2");
-        assert_eq!(sequences[2].sequence_id, "Unknown-3");
+        assert_eq!(sequences[0].get_sequence_id(), "Unknown-1");
+        assert_eq!(sequences[1].get_sequence_id(), "Unknown-2");
+        assert_eq!(sequences[2].get_sequence_id(), "Unknown-3");
         
-        let mut f = File::open("./tests/data/anonymous_multi_fasta.fa").expect("Error opening FASTA file.");
-        let mut buffer = [0; 5];
+        let mut forward_reader = sequences[0].build_forward_reader().expect("Error building forward reader");
 
-        f.seek(SeekFrom::Start(sequences[0].start_byte)).expect("Error seeking.");
-        f.read(&mut buffer[..]).expect("Error reading FASTA file");
-        let seq = std::str::from_utf8(&buffer).expect("Invalid UTF-8 sequence.");
-        assert_eq!(seq, "AAGTA");
+        assert_eq!(forward_reader.next(), Some("AAGTAGGAATAATATCTTATCATTATAGATAAAAACCTTCTGAATTTGCTTAGTGTGTAT".to_string()));
+        assert_eq!(forward_reader.next(), Some("ACGACTAGACATATATCAGCTCGCCGATTATTTGGATTATTCCCTG".to_string()));
+        assert_eq!(forward_reader.next(), None);
 
-        f.seek(SeekFrom::Start(sequences[0].end_byte - 5)).expect("Error seeking.");
-        f.read(&mut buffer[..]).expect("Error reading FASTA file");
-        let seq = std::str::from_utf8(&buffer).expect("Invalid UTF-8 sequence.");
-        assert_eq!(seq, "CCCTG");
+        let mut reverse_reader = sequences[0].build_reverse_reader().expect("Error building reverse reader");
 
-        f.seek(SeekFrom::Start(sequences[1].start_byte)).expect("Error seeking.");
-        f.read(&mut buffer[..]).expect("Error reading FASTA file");
-        let seq = std::str::from_utf8(&buffer).expect("Invalid UTF-8 sequence.");
-        assert_eq!(seq, "CAGTA");
+        assert_eq!(reverse_reader.next(), Some("GTCCCTTATTAGGTTTATTAGCCGCTCGACTATATACAGATCAGCA".to_string()));
+        assert_eq!(reverse_reader.next(), Some("TATGTGTGATTCGTTTAAGTCTTCCAAAAATAGATATTACTATTCTATAATAAGGATGAA".to_string()));
+        assert_eq!(reverse_reader.next(), None);
 
-        f.seek(SeekFrom::Start(sequences[1].end_byte - 5)).expect("Error seeking.");
-        f.read(&mut buffer[..]).expect("Error reading FASTA file");
-        let seq = std::str::from_utf8(&buffer).expect("Invalid UTF-8 sequence.");
-        assert_eq!(seq, "TCGTC");
+        let mut forward_reader = sequences[1].build_forward_reader().expect("Error building forward reader");
 
-        f.seek(SeekFrom::Start(sequences[2].start_byte)).expect("Error seeking.");
-        f.read(&mut buffer[..]).expect("Error reading FASTA file");
-        let seq = std::str::from_utf8(&buffer).expect("Invalid UTF-8 sequence.");
-        assert_eq!(seq, "CTTCA");
+        assert_eq!(forward_reader.next(), Some("CAGTAAAGAGTGGATGTAAGAACCGTCCGATCTACCAGATGTGATAGAGGTTGCCAGTAC".to_string()));
+        assert_eq!(forward_reader.next(), Some("AAAAATTGCATAATAATTGATTAATCCTTTAATATTGTTTAGAATATATCCGTCAGATAA".to_string()));
+        assert_eq!(forward_reader.next(), Some("TCCTAAAAATAACGATATGATGGCGGAAATCGTC".to_string()));
+        assert_eq!(forward_reader.next(), None);
 
-        f.seek(SeekFrom::Start(sequences[2].end_byte - 5)).expect("Error seeking.");
-        f.read(&mut buffer[..]).expect("Error reading FASTA file");
-        let seq = std::str::from_utf8(&buffer).expect("Invalid UTF-8 sequence.");
-        assert_eq!(seq, "ATTTG");
+        let mut reverse_reader = sequences[1].build_reverse_reader().expect("Error building reverse reader");
+
+        assert_eq!(reverse_reader.next(), Some("CTGCTAAAGGCGGTAGTATAGCAATAAAAATCCT".to_string()));
+        assert_eq!(reverse_reader.next(), Some("AATAGACTGCCTATATAAGATTTGTTATAATTTCCTAATTAGTTAATAATACGTTAAAAA".to_string()));
+        assert_eq!(reverse_reader.next(), Some("CATGACCGTTGGAGATAGTGTAGACCATCTAGCCTGCCAAGAATGTAGGTGAGAAATGAC".to_string()));
+        assert_eq!(reverse_reader.next(), None);
+
+        let mut forward_reader = sequences[2].build_forward_reader().expect("Error building forward reader");
+
+        assert_eq!(forward_reader.next(), Some("CTTCAATTACCCTGCTGACGCGAGATACCTTATGCATCGAAGGTAAAGCGATGAATTTAT".to_string()));
+        assert_eq!(forward_reader.next(), Some("CCAAGGTTTTAATTTG".to_string()));
+        assert_eq!(forward_reader.next(), None);
+
+        let mut reverse_reader = sequences[2].build_reverse_reader().expect("Error building reverse reader");
+
+        assert_eq!(reverse_reader.next(), Some("GTTTAATTTTGGAACC".to_string()));
+        assert_eq!(reverse_reader.next(), Some("TATTTAAGTAGCGAAATGGAAGCTACGTATTCCATAGAGCGCAGTCGTCCCATTAACTTC".to_string()));
+        assert_eq!(reverse_reader.next(), None);
     }
 }
