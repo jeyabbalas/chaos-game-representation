@@ -1,3 +1,4 @@
+use std::cmp::min;
 use std::io::prelude::*;
 use std::fs::File;
 use std::io::{BufReader, Result, SeekFrom};
@@ -5,10 +6,12 @@ use std::io::{BufReader, Result, SeekFrom};
 
 static DEFAULT_SIZE: usize = 4096;
 
+static LF_BYTE: u8 = '\n' as u8;
+static CR_BYTE: u8 = '\r' as u8;
+
 
 pub struct ForwardReader<R> {
     reader: BufReader<R>, 
-    start_byte: u64,
     end_byte: u64,
     cursor_position: u64, 
     buffer_size: u64, 
@@ -21,9 +24,12 @@ impl<R:Seek+Read> ForwardReader<R> {
     }
 
     pub fn with_capacity(capacity: usize, mut reader: BufReader<R>, start_byte: u64, end_byte: u64) -> Result<ForwardReader<R>> {
+        if start_byte > end_byte {
+            panic!("Start position of read cannot come after the end position of the sequence.");
+        }
+
         Ok(ForwardReader {
             reader, 
-            start_byte, 
             end_byte, 
             cursor_position: start_byte, 
             buffer_size: capacity as u64, 
@@ -32,11 +38,7 @@ impl<R:Seek+Read> ForwardReader<R> {
 
     fn read_to_buffer(&mut self, size: u64) -> Result<Vec<u8>> {
         let mut buffer = vec![0; size as usize]; 
-        let offset = size as i64;
-
         self.reader.read_exact(&mut buffer[0..(size as usize)])?;
-        self.reader.seek(SeekFrom::Current(offset))?;
-
         self.cursor_position += size;
 
         Ok(buffer)
@@ -48,7 +50,46 @@ impl<R:Read+Seek> Iterator for ForwardReader<R> {
     type Item = String;
     
     fn next(&mut self) -> Option<String> {
-        // TODO
+        let mut result: Vec<u8> = Vec::new();
+
+        'outer: loop {
+            if self.cursor_position >= self.end_byte {
+                if result.len() > 0 {
+                    break;
+                }
+                return None;
+            }
+
+            let size = min(self.buffer_size, self.end_byte - self.cursor_position);
+
+            match self.read_to_buffer(size) {
+                Ok(buffer) => {
+                    for (idx, c) in (&buffer).iter().enumerate() {
+                        if *c == LF_BYTE || *c == CR_BYTE {
+                            let mut offset = size - 1 - idx as u64;
+
+                            // handling CRLF combos
+                            if buffer[idx] == CR_BYTE && idx < size - 1 && buffer[idx] == LF_BYTE {
+                                offset += 1;
+                            }
+
+                            match self.reader.seek(SeekFrom::Current(-(offset as i64))) {
+                                Ok(_) => {
+                                    self.cursor_position -= offset;
+                                    break 'outer;
+                                },
+                                Err(_) => return None,
+                            }
+                        } else {
+                            result.push(c.clone());
+                        }
+                    }
+                },
+                Err(_) => None,
+            }
+        }
+
+        Some(String::from_utf8(result).unwrap())
     }
 }
 
@@ -56,7 +97,6 @@ impl<R:Read+Seek> Iterator for ForwardReader<R> {
 pub struct ReverseReader<R> {
     reader: BufReader<R>, 
     start_byte: u64,
-    end_byte: u64,
     cursor_position: u64, 
     buffer_size: u64, 
 }
@@ -68,10 +108,13 @@ impl<R:Seek+Read> ReverseReader<R> {
     }
 
     pub fn with_capacity(capacity: usize, mut reader: BufReader<R>, start_byte: u64, end_byte: u64) -> Result<ReverseReader<R>> {
+        if start_byte > end_byte {
+            panic!("Start position of read cannot come after the end position of the sequence.");
+        }
+
         Ok(ReverseReader {
             reader, 
             start_byte, 
-            end_byte, 
             cursor_position: end_byte, 
             buffer_size: capacity as u64, 
         })
@@ -96,7 +139,46 @@ impl<R:Read+Seek> Iterator for ReverseReader<R> {
     type Item = String;
     
     fn next(&mut self) -> Option<String> {
-        // TODO
+        let mut result: Vec<u8> = Vec::new();
+
+        'outer: loop {
+            if self.cursor_position <= self.start_byte {
+                if result.len() > 0 {
+                    break;
+                }
+                return None;
+            }
+
+            let size = min(self.buffer_size, self.start_byte - self.cursor_position);
+
+            match self.read_to_buffer(size) {
+                Ok(buffer) => {
+                    for (idx, c) in (&buffer).iter().enumerate().rev() {
+                        if *c == LF_BYTE {
+                            let mut offset = idx as u64;
+
+                            // handling CRLF combos
+                            if idx > 1 && buffer[idx-1] == CR_BYTE {
+                                offset -= 1;
+                            }
+
+                            match self.reader.seek(SeekFrom::Current(offset as i64)) {
+                                Ok(_) => {
+                                    self.cursor_position += offset;
+                                    break 'outer;
+                                },
+                                Err(_) => return None,
+                            }
+                        } else {
+                            result.push(c.clone());
+                        }
+                    }
+                },
+                Err(_) => None,
+            }
+        }
+
+        Some(String::from_utf8(result).unwrap())
     }
 }
 
