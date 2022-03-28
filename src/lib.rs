@@ -136,9 +136,9 @@ impl ChaosGameRepresentation {
         let fasta = Fasta::new(filepath)
                 .expect("Error landmarking FASTA file.");
         let sequences = fasta.get_sequences();
-        let mut forward_reader = sequences[0].build_forward_reader()
+        let forward_reader = sequences[0].build_forward_reader()
                 .expect("Error building forward reader");
-        let mut backward_reader = sequences[0].build_reverse_reader()
+        let backward_reader = sequences[0].build_reverse_reader()
                 .expect("Error building reverse reader");
 
         let str_to_nucleotides = Self::str_to_nucleotides;

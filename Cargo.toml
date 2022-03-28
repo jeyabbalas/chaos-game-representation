@@ -11,4 +11,3 @@ edition = "2021"
 [dependencies]
 plotters = "0.3"
 rand = "0.8.5"
-rev_lines = "0.2.1"

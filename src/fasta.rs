@@ -11,6 +11,8 @@ static LF_BYTE: u8 = '\n' as u8;
 static CR_BYTE: u8 = '\r' as u8;
 
 
+/// FASTA nucleotide sequences always go from 5' -> 3'. This reader 
+/// parses the sequence in 5' -> 3' order.
 pub struct ForwardFastaReader<R> {
     reader: BufReader<R>, 
     end_byte: u64,
@@ -99,6 +101,8 @@ impl<R:Read+Seek> Iterator for ForwardFastaReader<R> {
 }
 
 
+/// FASTA nucleotide sequences always go from 5' -> 3'. This reader 
+/// parses the sequence in 3' -> 5' order.
 pub struct ReverseFastaReader<R> {
     reader: BufReader<R>, 
     start_byte: u64,
