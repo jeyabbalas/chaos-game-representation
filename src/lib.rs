@@ -1,10 +1,7 @@
 pub mod fasta;
 
 use std::collections::HashMap;
-use std::fs::File;
 use std::path::Path;
-use std::io::prelude::*;
-use std::io::BufReader;
 use std::ops::{Add, Div, Sub};
 
 use plotters::prelude::*;
@@ -18,7 +15,8 @@ use rand::{
     Rng,
     thread_rng, 
 };
-use rev_lines::RevLines;
+
+use crate::fasta::Fasta;
 
 
 #[derive(Debug, Hash, Copy, Clone, PartialEq, Eq)]
@@ -130,19 +128,24 @@ impl ChaosGameRepresentation {
 
     fn construct_chaos_game_representation(filepath: &Path) -> Self {
         let name = filepath.file_stem().unwrap().to_str().unwrap().to_string();
+        let mut forward = Vec::<Point<f64>>::new();
+        let mut backward = Vec::<Point<f64>>::new();
 
-        let cgr_edges: HashMap<Nucleotide, Point<f64>> = ChaosGameRepresentation::get_cgr_edges();
-        let reader = BufReader::new(File::open(filepath).expect("Error reading FASTA file."));
-        let rev_lines = RevLines::new(BufReader::new(File::open(filepath).expect("Error reading FASTA file backwards."))).unwrap();
+        let cgr_edges: HashMap<Nucleotide, Point<f64>> = Self::get_cgr_edges();
 
-        let mut forward = Vec::new();
-        let mut backward = Vec::new();
+        let fasta = Fasta::new(filepath)
+                .expect("Error landmarking FASTA file.");
+        let sequences = fasta.get_sequences();
+        let mut forward_reader = sequences[0].build_forward_reader()
+                .expect("Error building forward reader");
+        let mut backward_reader = sequences[0].build_reverse_reader()
+                .expect("Error building reverse reader");
 
         let str_to_nucleotides = Self::str_to_nucleotides;
 
         let mut prev_point = Point { x: 0.5, y: 0.5 };
 
-        for line in reader.lines().map(|l| l.unwrap()) {
+        for line in forward_reader {
             if (&line).starts_with(">") {
                 continue;
             }
@@ -155,12 +158,12 @@ impl ChaosGameRepresentation {
 
         prev_point = Point { x: 0.5, y: 0.5 };
 
-        for line in rev_lines {
-            if (&line).len() == 0 || (&line).starts_with(">") {
+        for line in backward_reader {
+            if (&line).starts_with(">") {
                 continue;
             }
 
-            for base in str_to_nucleotides(&(&line).chars().rev().collect::<String>()) {
+            for base in str_to_nucleotides(&line) {
                 prev_point = prev_point + ((cgr_edges[&base] - prev_point) / 2.0);
                 backward.push(prev_point);
             }
@@ -203,13 +206,13 @@ impl ChaosGameRepresentation {
 
 
 pub struct BufferedChaosGameRepresentation {
-    fasta: fasta::Fasta,
+    fasta: Fasta,
 }
 
 
 impl BufferedChaosGameRepresentation {
     pub fn new(filepath: &Path) -> Self {
-        let fasta = fasta::Fasta::new(filepath)
+        let fasta = Fasta::new(filepath)
                 .expect("Error landmarking FASTA file.");
 
         Self {
