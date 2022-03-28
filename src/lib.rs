@@ -1,4 +1,4 @@
-mod fasta;
+pub mod fasta;
 
 use std::collections::HashMap;
 use std::fs::File;
@@ -10,7 +10,11 @@ use std::ops::{Add, Div, Sub};
 use plotters::prelude::*;
 use rand::prelude::ThreadRng;
 use rand::{
-    distributions::{Distribution, Standard, WeightedIndex},
+    distributions::{
+        Distribution, 
+        Standard, 
+        WeightedIndex
+    },
     Rng,
     thread_rng, 
 };
@@ -90,38 +94,41 @@ pub struct ChaosGameRepresentation {
 
 
 impl ChaosGameRepresentation {
-    pub fn from_fasta_file(filename: &str) -> ChaosGameRepresentation {
-        let filepath = Path::new(filename);
-        ChaosGameRepresentation::construct_chaos_game_representation(&filepath)
+    pub fn from_fasta_file(filepath: &Path) -> Self {
+        Self::construct_chaos_game_representation(filepath)
     }
 
     fn get_cgr_edges() -> HashMap<Nucleotide, Point<f64>> {
+        use Nucleotide::*;
+
         let mut cgr_edges: HashMap<Nucleotide, Point<f64>> = HashMap::new();
     
-        cgr_edges.insert(Nucleotide::A, Point { x: 0.0, y: 0.0 } );
-        cgr_edges.insert(Nucleotide::C, Point { x: 0.0, y: 1.0 } );
-        cgr_edges.insert(Nucleotide::G, Point { x: 1.0, y: 0.0 } );
-        cgr_edges.insert(Nucleotide::T, Point { x: 1.0, y: 1.0 } );
+        cgr_edges.insert(A, Point { x: 0.0, y: 0.0 } );
+        cgr_edges.insert(C, Point { x: 0.0, y: 1.0 } );
+        cgr_edges.insert(G, Point { x: 1.0, y: 0.0 } );
+        cgr_edges.insert(T, Point { x: 1.0, y: 1.0 } );
     
         cgr_edges
     }
 
     fn str_to_nucleotides(s: &str) -> Vec<Nucleotide> {
-        let dna_bases: [Nucleotide; 4] = [Nucleotide::A, Nucleotide::C, Nucleotide::G, Nucleotide::T];
+        use Nucleotide::*;
+
+        let dna_bases: [Nucleotide; 4] = [A, C, G, T];
         let dist_n: WeightedIndex<u8> = WeightedIndex::new(&[1, 1, 1, 1]).unwrap();
         let mut rng: ThreadRng = thread_rng();
     
         s.to_ascii_uppercase().chars().map(|base| match base {
-            'A' => Nucleotide::A, 
-            'C' => Nucleotide::C, 
-            'G' => Nucleotide::G, 
-            'T' => Nucleotide::T, 
+            'A' => A, 
+            'C' => C, 
+            'G' => G, 
+            'T' => T, 
             'N' => dna_bases[dist_n.sample(&mut rng)], 
             unk => panic!("Nucleotide base of unsupported type found in FASTA file: {}.", unk), 
         }).collect()
     }
 
-    fn construct_chaos_game_representation(filepath: &Path) -> ChaosGameRepresentation {
+    fn construct_chaos_game_representation(filepath: &Path) -> Self {
         let name = filepath.file_stem().unwrap().to_str().unwrap().to_string();
 
         let cgr_edges: HashMap<Nucleotide, Point<f64>> = ChaosGameRepresentation::get_cgr_edges();
@@ -131,7 +138,7 @@ impl ChaosGameRepresentation {
         let mut forward = Vec::new();
         let mut backward = Vec::new();
 
-        let str_to_nucleotides = ChaosGameRepresentation::str_to_nucleotides;
+        let str_to_nucleotides = Self::str_to_nucleotides;
 
         let mut prev_point = Point { x: 0.5, y: 0.5 };
 
@@ -159,7 +166,7 @@ impl ChaosGameRepresentation {
             }
         }
     
-        ChaosGameRepresentation { name, forward, backward }
+        Self { name, forward, backward }
     }
 }
 
@@ -195,8 +202,29 @@ impl ChaosGameRepresentation {
 }
 
 
-pub fn run(filename_fasta: &str){
-    let outdir = Path::new("./data/figures");
-    let cgr = ChaosGameRepresentation::from_fasta_file(filename_fasta);
-    cgr.plot(outdir, 1024, 30).expect("Error in plotting");
+pub struct BufferedChaosGameRepresentation {
+    fasta: fasta::Fasta,
 }
+
+
+impl BufferedChaosGameRepresentation {
+    pub fn new(filepath: &Path) -> Self {
+        let fasta = fasta::Fasta::new(filepath)
+                .expect("Error landmarking FASTA file.");
+
+        Self {
+            fasta, 
+        }
+    }
+
+    pub fn write_cgrs_to_hdf5() {
+        // TODO
+        // inputs: hdf5_filename, subset_seq_names &vec[1,2,3], chunks_shape
+        // each sequence can be parallelized
+    }
+
+    pub fn plot_cgrs() {
+        // TODO
+    }
+}
+

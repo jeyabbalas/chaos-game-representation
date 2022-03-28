@@ -1,4 +1,10 @@
-use chaos_game_representation::Point;
+use chaos_game_representation::{
+    BufferedChaosGameRepresentation, 
+    ChaosGameRepresentation, 
+    Point
+};
+
+use std::path::Path;
 
 
 const EPSILON: f64 = 0.0000001;
@@ -24,4 +30,26 @@ pub fn divide_test() {
     let div = Point { x: 2.0, y: 0.5 } / 2.0;
     assert!(((div.x - 1.0) as f64).abs() < EPSILON);
     assert!(((div.y - 0.25) as f64).abs() < EPSILON);
+}
+
+
+#[test]
+pub fn cgr_test() {
+    let filename = "./data/egfr/egfr.fa";
+    //let filename = "./data/grch37/hg19.fa";
+
+    let filepath = Path::new(filename);
+    let outdir = Path::new("./data/figures");
+    let cgr = ChaosGameRepresentation::from_fasta_file(filepath);
+    cgr.plot(outdir, 1024, 30).expect("Error in plotting");
+}
+
+
+#[test]
+pub fn buffered_cgr_test() {
+    let filename = "./data/egfr/egfr.fa";
+    //let filename = "./data/grch37/hg19.fa";
+    let filepath = Path::new(filename);
+
+    let cgr_buf = BufferedChaosGameRepresentation::new(filepath);
 }

@@ -21,10 +21,12 @@ pub struct ForwardFastaReader<R> {
 
 impl<R:Seek+Read> ForwardFastaReader<R> {
     pub fn new(reader: BufReader<R>, fasta_sequence: &FastaSequence) -> Result<ForwardFastaReader<R>> {
-        ForwardFastaReader::with_capacity(DEFAULT_SIZE, reader, fasta_sequence.get_start_byte(), fasta_sequence.get_end_byte())
+        ForwardFastaReader::with_capacity(DEFAULT_SIZE, reader, 
+            fasta_sequence.get_start_byte(), fasta_sequence.get_end_byte())
     }
 
-    pub fn with_capacity(capacity: usize, mut reader: BufReader<R>, start_byte: u64, end_byte: u64) -> Result<ForwardFastaReader<R>> {
+    pub fn with_capacity(capacity: usize, mut reader: BufReader<R>, 
+                         start_byte: u64, end_byte: u64) -> Result<ForwardFastaReader<R>> {
         if start_byte > end_byte {
             panic!("Start position of read cannot come after the end position of the sequence.");
         }
@@ -107,10 +109,12 @@ pub struct ReverseFastaReader<R> {
 
 impl<R:Seek+Read> ReverseFastaReader<R> {
     pub fn new(reader: BufReader<R>, fasta_sequence: &FastaSequence) -> Result<ReverseFastaReader<R>> {
-        ReverseFastaReader::with_capacity(DEFAULT_SIZE, reader, fasta_sequence.get_start_byte(), fasta_sequence.get_end_byte())
+        ReverseFastaReader::with_capacity(DEFAULT_SIZE, reader, 
+            fasta_sequence.get_start_byte(), fasta_sequence.get_end_byte())
     }
 
-    pub fn with_capacity(capacity: usize, mut reader: BufReader<R>, start_byte: u64, end_byte: u64) -> Result<ReverseFastaReader<R>> {
+    pub fn with_capacity(capacity: usize, mut reader: BufReader<R>, 
+                         start_byte: u64, end_byte: u64) -> Result<ReverseFastaReader<R>> {
         if start_byte > end_byte {
             panic!("Start position of read cannot come after the end position of the sequence.");
         }
@@ -193,6 +197,7 @@ pub struct FastaSequence {
     sequence_id: String, 
     start_byte: u64, 
     end_byte: u64, 
+    sequence_length: u64, 
 }
 
 
@@ -208,39 +213,48 @@ impl FastaSequence {
     pub fn get_end_byte(&self) -> u64 {
         self.end_byte
     }
+
+    pub fn get_sequence_length(&self) -> u64 {
+        self.sequence_length
+    }
 }
 
 
 impl FastaSequence {
     pub fn build_forward_reader(&self) -> Result<ForwardFastaReader<File>> {
-        let reader = BufReader::new(File::open(&self.filepath)
-                .expect("Error opening FASTA file when building forward reader."));
+        let reader = BufReader::new(
+            File::open(&self.filepath)
+            .expect("Error opening FASTA file when building forward reader."));
 
         ForwardFastaReader::new(reader, self)
     }
 
     pub fn build_reverse_reader(&self) -> Result<ReverseFastaReader<File>> {
-        let reader = BufReader::new(File::open(&self.filepath)
-                .expect("Error opening FASTA file when building reverse reader."));
+        let reader = BufReader::new(
+            File::open(&self.filepath)
+            .expect("Error opening FASTA file when building reverse reader."));
 
         ReverseFastaReader::new(reader, self)
     }
 }
 
 
-pub struct Fasta{
+pub struct Fasta {
     sequences: Vec<FastaSequence>, 
 }
 
 
 impl Fasta {
     pub fn new(fasta_filepath: &Path) -> Result<Fasta> {
-        let reader = BufReader::new(File::open(fasta_filepath).expect("Error opening FASTA file."));
+        let reader = BufReader::new(
+            File::open(fasta_filepath)
+            .expect("Error opening FASTA file."));
         let mut sequences: Vec<FastaSequence> = Vec::new();
         
         let mut sequence_id = String::new();
         let mut start_byte = 0_u64;
         let mut end_byte: u64;
+        let mut sequence_length = 0_u64;
 
         let mut record = false;
         let mut cursor_position = 0_u64;
@@ -256,7 +270,7 @@ impl Fasta {
             
             if line.starts_with(">") {
                 if record {
-                    // remove current header line chars + header line feed + 
+                    // remove— current header line chars + header line feed + 
                     // previous sequence end line feed + blank lines.
                     end_byte = cursor_position - (line.len() + 2) as u64 - blank_line_counters; 
                     
@@ -265,8 +279,10 @@ impl Fasta {
                         sequence_id, 
                         start_byte, 
                         end_byte, 
+                        sequence_length, 
                     });
 
+                    sequence_length = 0;
                     blank_line_counters = 0;
                 }
                 
@@ -280,6 +296,8 @@ impl Fasta {
                 start_byte = cursor_position;
                 
                 record = true;
+            } else {
+                sequence_length += line.len() as u64;
             }
         }
 
@@ -292,6 +310,7 @@ impl Fasta {
                 sequence_id, 
                 start_byte, 
                 end_byte, 
+                sequence_length, 
             });
         }
 
@@ -305,6 +324,10 @@ impl Fasta {
 impl Fasta {
     pub fn get_sequences(&self) -> &Vec<FastaSequence> {
         return &self.sequences
+    }
+
+    pub fn get_sequence_ids(&self) -> Vec<&String> {
+        self.get_sequences().iter().map(|seq| seq.get_sequence_id()).collect()
     }
 }
 
@@ -322,6 +345,7 @@ mod tests {
         let sequences = fasta_reader.get_sequences();
         assert_eq!(sequences.len(), 1);
         assert_eq!(sequences[0].get_sequence_id(), "sequenceID-001");
+        assert_eq!(sequences[0].get_sequence_length(), 106);
         
         let mut forward_reader = sequences[0].build_forward_reader().expect("Error building forward reader");
 
@@ -344,6 +368,7 @@ mod tests {
         let sequences = fasta_reader.get_sequences();
         assert_eq!(sequences.len(), 1);
         assert_eq!(sequences[0].get_sequence_id(), "Unknown-1");
+        assert_eq!(sequences[0].get_sequence_length(), 106);
         
         let mut forward_reader = sequences[0].build_forward_reader().expect("Error building forward reader");
 
@@ -368,6 +393,9 @@ mod tests {
         assert_eq!(sequences[0].get_sequence_id(), "sequenceID-001");
         assert_eq!(sequences[1].get_sequence_id(), "sequenceID-002");
         assert_eq!(sequences[2].get_sequence_id(), "sequenceID-003");
+        assert_eq!(sequences[0].get_sequence_length(), 106);
+        assert_eq!(sequences[1].get_sequence_length(), 154);
+        assert_eq!(sequences[2].get_sequence_length(), 76);
         
         let mut forward_reader = sequences[0].build_forward_reader().expect("Error building forward reader");
 
@@ -418,6 +446,9 @@ mod tests {
         assert_eq!(sequences[0].get_sequence_id(), "sequenceID-001");
         assert_eq!(sequences[1].get_sequence_id(), "sequenceID-002");
         assert_eq!(sequences[2].get_sequence_id(), "sequenceID-003");
+        assert_eq!(sequences[0].get_sequence_length(), 106);
+        assert_eq!(sequences[1].get_sequence_length(), 154);
+        assert_eq!(sequences[2].get_sequence_length(), 76);
         
         let mut forward_reader = sequences[0].build_forward_reader().expect("Error building forward reader");
 
@@ -468,6 +499,9 @@ mod tests {
         assert_eq!(sequences[0].get_sequence_id(), "Unknown-1");
         assert_eq!(sequences[1].get_sequence_id(), "Unknown-2");
         assert_eq!(sequences[2].get_sequence_id(), "Unknown-3");
+        assert_eq!(sequences[0].get_sequence_length(), 106);
+        assert_eq!(sequences[1].get_sequence_length(), 154);
+        assert_eq!(sequences[2].get_sequence_length(), 76);
         
         let mut forward_reader = sequences[0].build_forward_reader().expect("Error building forward reader");
 
