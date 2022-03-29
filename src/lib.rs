@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::ops::{Add, Div, Sub};
 
+use hdf5;
 use plotters::prelude::*;
 use rand::prelude::ThreadRng;
 use rand::{
@@ -205,29 +206,57 @@ impl ChaosGameRepresentation {
 }
 
 
-pub struct BufferedChaosGameRepresentation {
+pub struct BufferedChaosGameRepresentation { 
+    name: String, 
     fasta: Fasta,
 }
 
 
 impl BufferedChaosGameRepresentation {
     pub fn new(filepath: &Path) -> Self {
+        let name = filepath.file_stem().unwrap().to_str().unwrap().to_string();
         let fasta = Fasta::new(filepath)
                 .expect("Error landmarking FASTA file.");
 
         Self {
+            name, 
             fasta, 
         }
     }
 
-    pub fn write_cgrs_to_hdf5() {
+    pub fn write_cgrs_to_hdf5(&self, outdir: &Path, chunk_length: u64) -> Result<()> {
+        use hdf5::{File, Result};
         // TODO
         // inputs: hdf5_filename, subset_seq_names &vec[1,2,3], chunks_shape
         // each sequence can be parallelized
+        let filepath_hdf5 = outdir.join(format!("{}.h5", self.get_name()));
+        let file = File::create(filepath_hdf5)?;
+
+        const CGR_DIMENSION: u64 = 2;
+        let (nx, ny) = (chunk_length, CGR_DIMENSION+CGR_DIMENSION);
+
+        // write one dir for each chr
+
+        Ok(())
     }
 
     pub fn plot_cgrs() {
         // TODO
+    }
+}
+
+
+impl BufferedChaosGameRepresentation {
+    pub fn get_name(&self) -> String {
+        self.name
+    }
+
+    pub fn get_fasta(&self) -> &Fasta {
+        &self.fasta
+    }
+
+    pub fn get_sequence_ids(&self) -> Vec<&String> {
+        self.get_fasta().get_sequence_ids()
     }
 }
 
