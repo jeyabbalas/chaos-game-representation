@@ -47,9 +47,10 @@ pub fn cgr_test() {
 
 #[test]
 pub fn buffered_cgr_test() {
-    let filename = "./data/egfr/egfr.fa";
-    //let filename = "./data/grch37/hg19.fa";
-    let filepath = Path::new(filename);
+    let filepath = Path::new("./tests/data/multi_fasta.fa");
+    //let filepath = Path::new("./data/grch37/hg19.fa");
 
     let cgr_buf = BufferedChaosGameRepresentation::new(filepath);
+    let filepath_hdf5 = Path::new("./data/multi.h5");
+    cgr_buf.build_cgrs_and_write_to_hdf5(filepath_hdf5, 10).expect("Error in HDF5 file creation.");
 }

@@ -36,6 +36,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bef38d45163c2f1dde094a7dfd33ccf595c92905c8f8f4fdc18d06fb1037718a"
 
 [[package]]
+name = "blosc-src"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3c3372aaf42f24a767cfe596161cbfac42c60bd9e034e50d4f63cfebe13f68f4"
+dependencies = [
+ "cmake",
+]
+
+[[package]]
 name = "bumpalo"
 version = "3.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -313,6 +322,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bdcd9b131fd67bb827b386d0dc63d3e74196a14616ef800acf87ca5fef741a10"
 dependencies = [
  "bitflags",
+ "blosc-src",
  "cfg-if",
  "hdf5-derive",
  "hdf5-sys",
