@@ -4,10 +4,9 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::ops::{Add, Div, Sub};
 
-use hdf5;
 use plotters::prelude::*;
-use rand::prelude::ThreadRng;
 use rand::{
+    prelude::ThreadRng, 
     distributions::{
         Distribution, 
         Standard, 
@@ -31,11 +30,13 @@ enum Nucleotide {
 
 impl Distribution<Nucleotide> for Standard {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Nucleotide {
+        use Nucleotide::*;
+
         match rng.gen_range(0..=3) {
-            0 => Nucleotide::A, 
-            1 => Nucleotide::C, 
-            2 => Nucleotide::G, 
-            3 => Nucleotide::T, 
+            0 => A, 
+            1 => C, 
+            2 => G, 
+            3 => T, 
             _ => unreachable!(), 
         }
     }
@@ -224,20 +225,7 @@ impl BufferedChaosGameRepresentation {
         }
     }
 
-    pub fn write_cgrs_to_hdf5(&self, outdir: &Path, chunk_length: u64) -> Result<()> {
-        use hdf5::{File, Result};
-        // TODO
-        // inputs: hdf5_filename, subset_seq_names &vec[1,2,3], chunks_shape
-        // each sequence can be parallelized
-        let filepath_hdf5 = outdir.join(format!("{}.h5", self.get_name()));
-        let file = File::create(filepath_hdf5)?;
-
-        const CGR_DIMENSION: u64 = 2;
-        let (nx, ny) = (chunk_length, CGR_DIMENSION+CGR_DIMENSION);
-
-        // write one dir for each chr
-
-        Ok(())
+    pub fn write_cgrs_to_hdf5() {
     }
 
     pub fn plot_cgrs() {
@@ -248,7 +236,7 @@ impl BufferedChaosGameRepresentation {
 
 impl BufferedChaosGameRepresentation {
     pub fn get_name(&self) -> String {
-        self.name
+        self.name.to_string()
     }
 
     pub fn get_fasta(&self) -> &Fasta {

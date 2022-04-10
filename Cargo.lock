@@ -70,6 +70,7 @@ name = "chaos-game-representation"
 version = "0.1.0"
 dependencies = [
  "hdf5",
+ "ndarray",
  "plotters",
  "rand",
 ]
