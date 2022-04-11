@@ -331,7 +331,7 @@ impl BufferedChaosGameRepresentation {
             }
 
             let mut prev_point = Point { x: 0.5, y: 0.5 };
-            let mut idx = 0;
+            let mut idx = len;
             for line in backward_reader {
                 let mut backward_cgr = Vec::<Point<f64>>::new();
 
@@ -346,13 +346,14 @@ impl BufferedChaosGameRepresentation {
 
                 let backward_coords: Vec<[f64; 2]> = backward_cgr.iter()
                     .map(|point| [point.x, point.y])
+                    .rev()
                     .collect();
                 let backward_coords: &[[f64; 2]] = &backward_coords;
                 let backward_arr = arr2(backward_coords);
-                let seq_length = backward_arr.shape()[0];
-                ds_backward_cgr.write_slice(&backward_arr, (idx..(idx + seq_length), ..))?;
+                let segement_length = backward_arr.shape()[0];
+                ds_backward_cgr.write_slice(&backward_arr, ((idx - segement_length)..idx, ..))?;
 
-                idx += seq_length;
+                idx -= segement_length;
             }
         }
 
