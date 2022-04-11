@@ -261,6 +261,7 @@ impl BufferedChaosGameRepresentation {
     }
     
     pub fn build_cgrs_and_write_to_hdf5(&self, filename: &Path, chunk_length: usize) -> hdf5::Result<(), hdf5::Error> {
+        use Nucleotide::*;
         let file = hdf5::File::create(filename)?;
 
         let cgr_edges: HashMap<Nucleotide, Point<f64>> = Self::get_cgr_edges();
@@ -298,7 +299,7 @@ impl BufferedChaosGameRepresentation {
             let backward_reader = sequence.build_reverse_reader()
                 .expect("Error building reverse reader");
             
-            
+            // write sequence and calculate and write forward cgr
             let mut prev_point = Point { x: 0.5, y: 0.5 };
             let mut idx = 0;
             for line in forward_reader {
@@ -330,6 +331,27 @@ impl BufferedChaosGameRepresentation {
                 idx += seq_arr.len();
             }
 
+            let attr = ds_forward_cgr.new_attr::<f64>()
+                .shape([2])
+                .create("A")?;
+            attr.write(&[cgr_edges[&A].x, cgr_edges[&A].y])?;
+            
+            let attr = ds_forward_cgr.new_attr::<f64>()
+                .shape([2])
+                .create("T")?;
+            attr.write(&[cgr_edges[&T].x, cgr_edges[&T].y])?;
+            
+            let attr = ds_forward_cgr.new_attr::<f64>()
+                .shape([2])
+                .create("G")?;
+            attr.write(&[cgr_edges[&G].x, cgr_edges[&G].y])?;
+            
+            let attr = ds_forward_cgr.new_attr::<f64>()
+                .shape([2])
+                .create("C")?;
+            attr.write(&[cgr_edges[&C].x, cgr_edges[&C].y])?;
+
+            // calculate and write backward cgr
             let mut prev_point = Point { x: 0.5, y: 0.5 };
             let mut idx = len;
             for line in backward_reader {
@@ -355,6 +377,27 @@ impl BufferedChaosGameRepresentation {
 
                 idx -= segement_length;
             }
+
+            let attr = ds_backward_cgr.new_attr::<f64>()
+                .shape([2])
+                .create("A")?;
+            attr.write(&[cgr_edges[&A].x, cgr_edges[&A].y])?;
+            
+            let attr = ds_backward_cgr.new_attr::<f64>()
+                .shape([2])
+                .create("T")?;
+            attr.write(&[cgr_edges[&T].x, cgr_edges[&T].y])?;
+            
+            let attr = ds_backward_cgr.new_attr::<f64>()
+                .shape([2])
+                .create("G")?;
+            attr.write(&[cgr_edges[&G].x, cgr_edges[&G].y])?;
+            
+            let attr = ds_backward_cgr.new_attr::<f64>()
+                .shape([2])
+                .create("C")?;
+            attr.write(&[cgr_edges[&C].x, cgr_edges[&C].y])?;
+            
         }
 
         Ok(())
