@@ -219,7 +219,7 @@ impl BufferedChaosGameRepresentation {
     pub fn new(filepath: &Path) -> Self {
         let name = filepath.file_stem().unwrap().to_str().unwrap().to_string();
         let fasta = Fasta::new(filepath)
-                .expect("Error landmarking FASTA file.");
+                .expect("Error while indexing FASTA file.");
 
         Self {
             name, 
@@ -259,19 +259,32 @@ impl BufferedChaosGameRepresentation {
             unk => panic!("Nucleotide base of unsupported type found in FASTA file: {}.", unk), 
         }).collect()
     }
+
+    pub fn build_cgrs_and_write_to_hdf5(&self, 
+        filename: &Path, 
+        chunk_length: usize) -> hdf5::Result<(), hdf5::Error> {
+            let select_ids = self.get_fasta().get_sequence_ids();
+            self.build_select_cgrs_and_write_to_hdf5(filename, chunk_length, select_ids)
+    }
     
-    pub fn build_cgrs_and_write_to_hdf5(&self, filename: &Path, chunk_length: usize) -> hdf5::Result<(), hdf5::Error> {
+    pub fn build_select_cgrs_and_write_to_hdf5(&self, 
+        filename: &Path, 
+        chunk_length: usize, 
+        select_ids: Vec<&str>) -> hdf5::Result<(), hdf5::Error> {
         use Nucleotide::*;
         let file = hdf5::File::create(filename)?;
 
         let cgr_edges: HashMap<Nucleotide, Point<f64>> = Self::get_cgr_edges();
         let str_to_nucleotides = Self::str_to_nucleotides;
 
-        for sequence in self.get_fasta().get_sequences() {
-            let name = sequence.get_sequence_id();
-            let group = file.create_group(name)?;
-
+        for sequence_id in select_ids {
+            let sequence = self.get_fasta().get_sequence_by_id(sequence_id)
+                .expect("Sequence ID not found.");
             let len = sequence.get_sequence_length() as usize;
+
+            println!("Writing sequence {} of length {} to HDF5 file.", sequence_id, len);
+
+            let group = file.create_group(sequence_id)?;
 
             // sequence
             let ds_sequence = group.new_dataset::<FixedAscii<1>>()
@@ -397,7 +410,6 @@ impl BufferedChaosGameRepresentation {
                 .shape([2])
                 .create("C")?;
             attr.write(&[cgr_edges[&C].x, cgr_edges[&C].y])?;
-            
         }
 
         Ok(())
@@ -414,7 +426,7 @@ impl BufferedChaosGameRepresentation {
         &self.fasta
     }
 
-    pub fn get_sequence_ids(&self) -> Vec<&String> {
+    pub fn get_sequence_ids(&self) -> Vec<&str> {
         self.get_fasta().get_sequence_ids()
     }
 }

@@ -1,4 +1,5 @@
 use std::cmp::min;
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::prelude::*;
 use std::io::{BufReader, Result, SeekFrom};
@@ -198,7 +199,6 @@ impl<R:Read+Seek> Iterator for ReverseFastaReader<R> {
 
 pub struct FastaSequence {
     filepath: PathBuf, 
-    sequence_id: String, 
     start_byte: u64, 
     end_byte: u64, 
     sequence_length: u64, 
@@ -206,10 +206,6 @@ pub struct FastaSequence {
 
 
 impl FastaSequence {
-    pub fn get_sequence_id(&self) -> &String {
-        &self.sequence_id
-    }
-
     pub fn get_start_byte(&self) -> u64 {
         self.start_byte
     }
@@ -244,7 +240,7 @@ impl FastaSequence {
 
 
 pub struct Fasta {
-    sequences: Vec<FastaSequence>, 
+    sequences: HashMap<String, FastaSequence>, 
 }
 
 
@@ -253,7 +249,7 @@ impl Fasta {
         let reader = BufReader::new(
             File::open(fasta_filepath)
             .expect("Error opening FASTA file."));
-        let mut sequences: Vec<FastaSequence> = Vec::new();
+        let mut sequences = HashMap::<String, FastaSequence>::new();
         
         let mut sequence_id = String::new();
         let mut start_byte = 0_u64;
@@ -277,14 +273,16 @@ impl Fasta {
                     // remove— current header line chars + header line feed + 
                     // previous sequence end line feed + blank lines.
                     end_byte = cursor_position - (line.len() + 2) as u64 - blank_line_counters; 
-                    
-                    sequences.push(FastaSequence {
-                        filepath: fasta_filepath.to_path_buf(), 
+
+                    sequences.insert(
                         sequence_id, 
-                        start_byte, 
-                        end_byte, 
-                        sequence_length, 
-                    });
+                        FastaSequence {
+                            filepath: fasta_filepath.to_path_buf(), 
+                            start_byte, 
+                            end_byte, 
+                            sequence_length, 
+                        }
+                    );
 
                     sequence_length = 0;
                     blank_line_counters = 0;
@@ -309,13 +307,15 @@ impl Fasta {
             // remove last line feed character + blank lines
             end_byte = cursor_position - 1 - blank_line_counters; 
 
-            sequences.push(FastaSequence {
-                filepath: fasta_filepath.to_path_buf(), 
+            sequences.insert(
                 sequence_id, 
-                start_byte, 
-                end_byte, 
-                sequence_length, 
-            });
+                FastaSequence {
+                    filepath: fasta_filepath.to_path_buf(), 
+                    start_byte, 
+                    end_byte, 
+                    sequence_length, 
+                }
+            );
         }
 
         Ok(Fasta {
@@ -326,12 +326,20 @@ impl Fasta {
 
 
 impl Fasta {
-    pub fn get_sequences(&self) -> &Vec<FastaSequence> {
-        return &self.sequences
+    pub fn get_sequences(&self) -> Vec<&FastaSequence> {
+        self.sequences.iter().map(|(_, value)| value).collect()
     }
 
-    pub fn get_sequence_ids(&self) -> Vec<&String> {
-        self.get_sequences().iter().map(|seq| seq.get_sequence_id()).collect()
+    pub fn get_sequence_ids(&self) -> Vec<&str> {
+        self.sequences.iter().map(|(key, _)| key.as_str()).collect()
+    }
+
+    pub fn get_sequence_by_id(&self, sequence_id: &str) -> Option<&FastaSequence> {
+        self.sequences.get(sequence_id)
+    }
+
+    pub fn get_sequence_by_ids(&self, sequence_ids: Vec<&str>) -> Vec<Option<&FastaSequence>> {
+        sequence_ids.iter().map(|sequence_id| self.get_sequence_by_id(sequence_id)).collect()
     }
 }
 
@@ -344,20 +352,22 @@ mod tests {
     #[test]
     pub fn parse_single_fasta() {
         let filepath = Path::new("./tests/data/single_fasta.fa");
-        let fasta_reader = Fasta::new(filepath).expect("Error landmarking FASTA file.");
+        let fasta = Fasta::new(filepath).expect("Error indexing FASTA file.");
         
-        let sequences = fasta_reader.get_sequences();
+        let sequences = fasta.get_sequences();
         assert_eq!(sequences.len(), 1);
-        assert_eq!(sequences[0].get_sequence_id(), "sequenceID-001");
-        assert_eq!(sequences[0].get_sequence_length(), 106);
+
+        let seq1 = fasta.get_sequence_by_id("sequenceID-001")
+            .expect("Unable to retrieve sequenceID-001");
+        assert_eq!(seq1.get_sequence_length(), 106); 
         
-        let mut forward_reader = sequences[0].build_forward_reader().expect("Error building forward reader");
+        let mut forward_reader = seq1.build_forward_reader().expect("Error building forward reader");
 
         assert_eq!(forward_reader.next(), Some("AAGTAGGAATAATATCTTATCATTATAGATAAAAACCTTCTGAATTTGCTTAGTGTGTAT".to_string()));
         assert_eq!(forward_reader.next(), Some("ACGACTAGACATATATCAGCTCGCCGATTATTTGGATTATTCCCTG".to_string()));
         assert_eq!(forward_reader.next(), None);
 
-        let mut reverse_reader = sequences[0].build_reverse_reader().expect("Error building reverse reader");
+        let mut reverse_reader = seq1.build_reverse_reader().expect("Error building reverse reader");
 
         assert_eq!(reverse_reader.next(), Some("GTCCCTTATTAGGTTTATTAGCCGCTCGACTATATACAGATCAGCA".to_string()));
         assert_eq!(reverse_reader.next(), Some("TATGTGTGATTCGTTTAAGTCTTCCAAAAATAGATATTACTATTCTATAATAAGGATGAA".to_string()));
@@ -367,20 +377,22 @@ mod tests {
     #[test]
     pub fn parse_anonymous_single_fasta() {
         let filepath = Path::new("./tests/data/anonymous_single_fasta.fa");
-        let fasta_reader = Fasta::new(filepath).expect("Error landmarking FASTA file.");
+        let fasta = Fasta::new(filepath).expect("Error indexing FASTA file.");
         
-        let sequences = fasta_reader.get_sequences();
+        let sequences = fasta.get_sequences();
         assert_eq!(sequences.len(), 1);
-        assert_eq!(sequences[0].get_sequence_id(), "Unknown-1");
-        assert_eq!(sequences[0].get_sequence_length(), 106);
+
+        let seq1 = fasta.get_sequence_by_id("Unknown-1")
+            .expect("Unable to retrieve Unknown-1");
+        assert_eq!(seq1.get_sequence_length(), 106);
         
-        let mut forward_reader = sequences[0].build_forward_reader().expect("Error building forward reader");
+        let mut forward_reader = seq1.build_forward_reader().expect("Error building forward reader");
 
         assert_eq!(forward_reader.next(), Some("AAGTAGGAATAATATCTTATCATTATAGATAAAAACCTTCTGAATTTGCTTAGTGTGTAT".to_string()));
         assert_eq!(forward_reader.next(), Some("ACGACTAGACATATATCAGCTCGCCGATTATTTGGATTATTCCCTG".to_string()));
         assert_eq!(forward_reader.next(), None);
 
-        let mut reverse_reader = sequences[0].build_reverse_reader().expect("Error building reverse reader");
+        let mut reverse_reader = seq1.build_reverse_reader().expect("Error building reverse reader");
 
         assert_eq!(reverse_reader.next(), Some("GTCCCTTATTAGGTTTATTAGCCGCTCGACTATATACAGATCAGCA".to_string()));
         assert_eq!(reverse_reader.next(), Some("TATGTGTGATTCGTTTAAGTCTTCCAAAAATAGATATTACTATTCTATAATAAGGATGAA".to_string()));
@@ -390,50 +402,54 @@ mod tests {
     #[test]
     pub fn parse_multi_fasta() {
         let filepath = Path::new("./tests/data/multi_fasta.fa");
-        let fasta_reader = Fasta::new(filepath).expect("Error landmarking FASTA file.");
+        let fasta = Fasta::new(filepath).expect("Error indexing FASTA file.");
 
-        let sequences = fasta_reader.get_sequences();
+        let sequences = fasta.get_sequences();
         assert_eq!(sequences.len(), 3);
-        assert_eq!(sequences[0].get_sequence_id(), "sequenceID-001");
-        assert_eq!(sequences[1].get_sequence_id(), "sequenceID-002");
-        assert_eq!(sequences[2].get_sequence_id(), "sequenceID-003");
-        assert_eq!(sequences[0].get_sequence_length(), 106);
-        assert_eq!(sequences[1].get_sequence_length(), 154);
-        assert_eq!(sequences[2].get_sequence_length(), 76);
+
+        let seq1 = fasta.get_sequence_by_id("sequenceID-001")
+            .expect("Unable to retrieve sequenceID-001");
+        let seq2 = fasta.get_sequence_by_id("sequenceID-002")
+            .expect("Unable to retrieve sequenceID-002");
+        let seq3 = fasta.get_sequence_by_id("sequenceID-003")
+            .expect("Unable to retrieve sequenceID-003");
+        assert_eq!(seq1.get_sequence_length(), 106); 
+        assert_eq!(seq2.get_sequence_length(), 154);
+        assert_eq!(seq3.get_sequence_length(), 76);
         
-        let mut forward_reader = sequences[0].build_forward_reader().expect("Error building forward reader");
+        let mut forward_reader = seq1.build_forward_reader().expect("Error building forward reader");
 
         assert_eq!(forward_reader.next(), Some("AAGTAGGAATAATATCTTATCATTATAGATAAAAACCTTCTGAATTTGCTTAGTGTGTAT".to_string()));
         assert_eq!(forward_reader.next(), Some("ACGACTAGACATATATCAGCTCGCCGATTATTTGGATTATTCCCTG".to_string()));
         assert_eq!(forward_reader.next(), None);
 
-        let mut reverse_reader = sequences[0].build_reverse_reader().expect("Error building reverse reader");
+        let mut reverse_reader = seq1.build_reverse_reader().expect("Error building reverse reader");
 
         assert_eq!(reverse_reader.next(), Some("GTCCCTTATTAGGTTTATTAGCCGCTCGACTATATACAGATCAGCA".to_string()));
         assert_eq!(reverse_reader.next(), Some("TATGTGTGATTCGTTTAAGTCTTCCAAAAATAGATATTACTATTCTATAATAAGGATGAA".to_string()));
         assert_eq!(reverse_reader.next(), None);
 
-        let mut forward_reader = sequences[1].build_forward_reader().expect("Error building forward reader");
+        let mut forward_reader = seq2.build_forward_reader().expect("Error building forward reader");
 
         assert_eq!(forward_reader.next(), Some("CAGTAAAGAGTGGATGTAAGAACCGTCCGATCTACCAGATGTGATAGAGGTTGCCAGTAC".to_string()));
         assert_eq!(forward_reader.next(), Some("AAAAATTGCATAATAATTGATTAATCCTTTAATATTGTTTAGAATATATCCGTCAGATAA".to_string()));
         assert_eq!(forward_reader.next(), Some("TCCTAAAAATAACGATATGATGGCGGAAATCGTC".to_string()));
         assert_eq!(forward_reader.next(), None);
 
-        let mut reverse_reader = sequences[1].build_reverse_reader().expect("Error building reverse reader");
+        let mut reverse_reader = seq2.build_reverse_reader().expect("Error building reverse reader");
 
         assert_eq!(reverse_reader.next(), Some("CTGCTAAAGGCGGTAGTATAGCAATAAAAATCCT".to_string()));
         assert_eq!(reverse_reader.next(), Some("AATAGACTGCCTATATAAGATTTGTTATAATTTCCTAATTAGTTAATAATACGTTAAAAA".to_string()));
         assert_eq!(reverse_reader.next(), Some("CATGACCGTTGGAGATAGTGTAGACCATCTAGCCTGCCAAGAATGTAGGTGAGAAATGAC".to_string()));
         assert_eq!(reverse_reader.next(), None);
 
-        let mut forward_reader = sequences[2].build_forward_reader().expect("Error building forward reader");
+        let mut forward_reader = seq3.build_forward_reader().expect("Error building forward reader");
 
         assert_eq!(forward_reader.next(), Some("CTTCAATTACCCTGCTGACGCGAGATACCTTATGCATCGAAGGTAAAGCGATGAATTTAT".to_string()));
         assert_eq!(forward_reader.next(), Some("CCAAGGTTTTAATTTG".to_string()));
         assert_eq!(forward_reader.next(), None);
 
-        let mut reverse_reader = sequences[2].build_reverse_reader().expect("Error building reverse reader");
+        let mut reverse_reader = seq3.build_reverse_reader().expect("Error building reverse reader");
 
         assert_eq!(reverse_reader.next(), Some("GTTTAATTTTGGAACC".to_string()));
         assert_eq!(reverse_reader.next(), Some("TATTTAAGTAGCGAAATGGAAGCTACGTATTCCATAGAGCGCAGTCGTCCCATTAACTTC".to_string()));
@@ -443,50 +459,54 @@ mod tests {
     #[test]
     pub fn parse_multi_fasta_extra_linefeeds() {
         let filepath = Path::new("./tests/data/multi_fasta_extra_linefeeds.fa");
-        let fasta_reader = Fasta::new(filepath).expect("Error landmarking FASTA file.");
+        let fasta = Fasta::new(filepath).expect("Error indexing FASTA file.");
 
-        let sequences = fasta_reader.get_sequences();
+        let sequences = fasta.get_sequences();
         assert_eq!(sequences.len(), 3);
-        assert_eq!(sequences[0].get_sequence_id(), "sequenceID-001");
-        assert_eq!(sequences[1].get_sequence_id(), "sequenceID-002");
-        assert_eq!(sequences[2].get_sequence_id(), "sequenceID-003");
-        assert_eq!(sequences[0].get_sequence_length(), 106);
-        assert_eq!(sequences[1].get_sequence_length(), 154);
-        assert_eq!(sequences[2].get_sequence_length(), 76);
+
+        let seq1 = fasta.get_sequence_by_id("sequenceID-001")
+            .expect("Unable to retrieve sequenceID-001");
+        let seq2 = fasta.get_sequence_by_id("sequenceID-002")
+            .expect("Unable to retrieve sequenceID-002");
+        let seq3 = fasta.get_sequence_by_id("sequenceID-003")
+            .expect("Unable to retrieve sequenceID-003");
+        assert_eq!(seq1.get_sequence_length(), 106); 
+        assert_eq!(seq2.get_sequence_length(), 154);
+        assert_eq!(seq3.get_sequence_length(), 76);
         
-        let mut forward_reader = sequences[0].build_forward_reader().expect("Error building forward reader");
+        let mut forward_reader = seq1.build_forward_reader().expect("Error building forward reader");
 
         assert_eq!(forward_reader.next(), Some("AAGTAGGAATAATATCTTATCATTATAGATAAAAACCTTCTGAATTTGCTTAGTGTGTAT".to_string()));
         assert_eq!(forward_reader.next(), Some("ACGACTAGACATATATCAGCTCGCCGATTATTTGGATTATTCCCTG".to_string()));
         assert_eq!(forward_reader.next(), None);
 
-        let mut reverse_reader = sequences[0].build_reverse_reader().expect("Error building reverse reader");
+        let mut reverse_reader = seq1.build_reverse_reader().expect("Error building reverse reader");
 
         assert_eq!(reverse_reader.next(), Some("GTCCCTTATTAGGTTTATTAGCCGCTCGACTATATACAGATCAGCA".to_string()));
         assert_eq!(reverse_reader.next(), Some("TATGTGTGATTCGTTTAAGTCTTCCAAAAATAGATATTACTATTCTATAATAAGGATGAA".to_string()));
         assert_eq!(reverse_reader.next(), None);
 
-        let mut forward_reader = sequences[1].build_forward_reader().expect("Error building forward reader");
+        let mut forward_reader = seq2.build_forward_reader().expect("Error building forward reader");
 
         assert_eq!(forward_reader.next(), Some("CAGTAAAGAGTGGATGTAAGAACCGTCCGATCTACCAGATGTGATAGAGGTTGCCAGTAC".to_string()));
         assert_eq!(forward_reader.next(), Some("AAAAATTGCATAATAATTGATTAATCCTTTAATATTGTTTAGAATATATCCGTCAGATAA".to_string()));
         assert_eq!(forward_reader.next(), Some("TCCTAAAAATAACGATATGATGGCGGAAATCGTC".to_string()));
         assert_eq!(forward_reader.next(), None);
 
-        let mut reverse_reader = sequences[1].build_reverse_reader().expect("Error building reverse reader");
+        let mut reverse_reader = seq2.build_reverse_reader().expect("Error building reverse reader");
 
         assert_eq!(reverse_reader.next(), Some("CTGCTAAAGGCGGTAGTATAGCAATAAAAATCCT".to_string()));
         assert_eq!(reverse_reader.next(), Some("AATAGACTGCCTATATAAGATTTGTTATAATTTCCTAATTAGTTAATAATACGTTAAAAA".to_string()));
         assert_eq!(reverse_reader.next(), Some("CATGACCGTTGGAGATAGTGTAGACCATCTAGCCTGCCAAGAATGTAGGTGAGAAATGAC".to_string()));
         assert_eq!(reverse_reader.next(), None);
 
-        let mut forward_reader = sequences[2].build_forward_reader().expect("Error building forward reader");
+        let mut forward_reader = seq3.build_forward_reader().expect("Error building forward reader");
 
         assert_eq!(forward_reader.next(), Some("CTTCAATTACCCTGCTGACGCGAGATACCTTATGCATCGAAGGTAAAGCGATGAATTTAT".to_string()));
         assert_eq!(forward_reader.next(), Some("CCAAGGTTTTAATTTG".to_string()));
         assert_eq!(forward_reader.next(), None);
 
-        let mut reverse_reader = sequences[2].build_reverse_reader().expect("Error building reverse reader");
+        let mut reverse_reader = seq3.build_reverse_reader().expect("Error building reverse reader");
 
         assert_eq!(reverse_reader.next(), Some("GTTTAATTTTGGAACC".to_string()));
         assert_eq!(reverse_reader.next(), Some("TATTTAAGTAGCGAAATGGAAGCTACGTATTCCATAGAGCGCAGTCGTCCCATTAACTTC".to_string()));
@@ -496,50 +516,54 @@ mod tests {
     #[test]
     pub fn parse_anonymous_multi_fasta() {
         let filepath = Path::new("./tests/data/anonymous_multi_fasta.fa");
-        let fasta_reader = Fasta::new(filepath).expect("Error landmarking FASTA file.");
+        let fasta = Fasta::new(filepath).expect("Error indexing FASTA file.");
 
-        let sequences = fasta_reader.get_sequences();
+        let sequences = fasta.get_sequences();
         assert_eq!(sequences.len(), 3);
-        assert_eq!(sequences[0].get_sequence_id(), "Unknown-1");
-        assert_eq!(sequences[1].get_sequence_id(), "Unknown-2");
-        assert_eq!(sequences[2].get_sequence_id(), "Unknown-3");
-        assert_eq!(sequences[0].get_sequence_length(), 106);
-        assert_eq!(sequences[1].get_sequence_length(), 154);
-        assert_eq!(sequences[2].get_sequence_length(), 76);
+
+        let seq1 = fasta.get_sequence_by_id("Unknown-1")
+            .expect("Unable to retrieve Unknown-1");
+        let seq2 = fasta.get_sequence_by_id("Unknown-2")
+            .expect("Unable to retrieve Unknown-2");
+        let seq3 = fasta.get_sequence_by_id("Unknown-3")
+            .expect("Unable to retrieve Unknown-3");
+        assert_eq!(seq1.get_sequence_length(), 106); 
+        assert_eq!(seq2.get_sequence_length(), 154);
+        assert_eq!(seq3.get_sequence_length(), 76);
         
-        let mut forward_reader = sequences[0].build_forward_reader().expect("Error building forward reader");
+        let mut forward_reader = seq1.build_forward_reader().expect("Error building forward reader");
 
         assert_eq!(forward_reader.next(), Some("AAGTAGGAATAATATCTTATCATTATAGATAAAAACCTTCTGAATTTGCTTAGTGTGTAT".to_string()));
         assert_eq!(forward_reader.next(), Some("ACGACTAGACATATATCAGCTCGCCGATTATTTGGATTATTCCCTG".to_string()));
         assert_eq!(forward_reader.next(), None);
 
-        let mut reverse_reader = sequences[0].build_reverse_reader().expect("Error building reverse reader");
+        let mut reverse_reader = seq1.build_reverse_reader().expect("Error building reverse reader");
 
         assert_eq!(reverse_reader.next(), Some("GTCCCTTATTAGGTTTATTAGCCGCTCGACTATATACAGATCAGCA".to_string()));
         assert_eq!(reverse_reader.next(), Some("TATGTGTGATTCGTTTAAGTCTTCCAAAAATAGATATTACTATTCTATAATAAGGATGAA".to_string()));
         assert_eq!(reverse_reader.next(), None);
 
-        let mut forward_reader = sequences[1].build_forward_reader().expect("Error building forward reader");
+        let mut forward_reader = seq2.build_forward_reader().expect("Error building forward reader");
 
         assert_eq!(forward_reader.next(), Some("CAGTAAAGAGTGGATGTAAGAACCGTCCGATCTACCAGATGTGATAGAGGTTGCCAGTAC".to_string()));
         assert_eq!(forward_reader.next(), Some("AAAAATTGCATAATAATTGATTAATCCTTTAATATTGTTTAGAATATATCCGTCAGATAA".to_string()));
         assert_eq!(forward_reader.next(), Some("TCCTAAAAATAACGATATGATGGCGGAAATCGTC".to_string()));
         assert_eq!(forward_reader.next(), None);
 
-        let mut reverse_reader = sequences[1].build_reverse_reader().expect("Error building reverse reader");
+        let mut reverse_reader = seq2.build_reverse_reader().expect("Error building reverse reader");
 
         assert_eq!(reverse_reader.next(), Some("CTGCTAAAGGCGGTAGTATAGCAATAAAAATCCT".to_string()));
         assert_eq!(reverse_reader.next(), Some("AATAGACTGCCTATATAAGATTTGTTATAATTTCCTAATTAGTTAATAATACGTTAAAAA".to_string()));
         assert_eq!(reverse_reader.next(), Some("CATGACCGTTGGAGATAGTGTAGACCATCTAGCCTGCCAAGAATGTAGGTGAGAAATGAC".to_string()));
         assert_eq!(reverse_reader.next(), None);
 
-        let mut forward_reader = sequences[2].build_forward_reader().expect("Error building forward reader");
+        let mut forward_reader = seq3.build_forward_reader().expect("Error building forward reader");
 
         assert_eq!(forward_reader.next(), Some("CTTCAATTACCCTGCTGACGCGAGATACCTTATGCATCGAAGGTAAAGCGATGAATTTAT".to_string()));
         assert_eq!(forward_reader.next(), Some("CCAAGGTTTTAATTTG".to_string()));
         assert_eq!(forward_reader.next(), None);
 
-        let mut reverse_reader = sequences[2].build_reverse_reader().expect("Error building reverse reader");
+        let mut reverse_reader = seq3.build_reverse_reader().expect("Error building reverse reader");
 
         assert_eq!(reverse_reader.next(), Some("GTTTAATTTTGGAACC".to_string()));
         assert_eq!(reverse_reader.next(), Some("TATTTAAGTAGCGAAATGGAAGCTACGTATTCCATAGAGCGCAGTCGTCCCATTAACTTC".to_string()));
