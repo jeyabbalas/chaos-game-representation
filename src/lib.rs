@@ -276,34 +276,33 @@ impl BufferedChaosGameRepresentation {
 
         let cgr_edges: HashMap<Nucleotide, Point<f64>> = Self::get_cgr_edges();
         let str_to_nucleotides = Self::str_to_nucleotides;
-
+        
         for sequence_id in select_ids {
             let sequence = self.get_fasta().get_sequence_by_id(sequence_id)
                 .expect("Sequence ID not found.");
-            let len = sequence.get_sequence_length() as usize;
-
-            println!("Writing sequence {} of length {} to HDF5 file.", sequence_id, len);
+            let sequence_len = sequence.get_sequence_length() as usize;
+            println!("Writing sequence {} of length {} to HDF5 file.", sequence_id, sequence_len);
 
             let group = file.create_group(sequence_id)?;
 
             // sequence
             let ds_sequence = group.new_dataset::<FixedAscii<1>>()
                 .chunk(chunk_length)
-                .shape(len)
+                .shape(sequence_len)
                 .deflate(5)
                 .create("sequence")?;
 
             // forward cgr
             let ds_forward_cgr = group.new_dataset::<f64>()
                 .chunk((chunk_length, 2))
-                .shape((len, 2))
+                .shape((sequence_len, 2))
                 .deflate(5)
                 .create("forward_cgr")?;
             
             // backward cgr
             let ds_backward_cgr = group.new_dataset::<f64>()
                 .chunk((chunk_length, 2))
-                .shape((len, 2))
+                .shape((sequence_len, 2))
                 .deflate(5)
                 .create("backward_cgr")?;
             
@@ -315,22 +314,33 @@ impl BufferedChaosGameRepresentation {
             // write sequence and calculate and write forward cgr
             let mut prev_point = Point { x: 0.5, y: 0.5 };
             let mut idx = 0;
+            let mut sequence_parsed = 0;
+            let mut sequence_bytes = Vec::<FixedAscii<1>>::with_capacity(chunk_length);
+            let mut sequence_buffer = Vec::<Nucleotide>::with_capacity(chunk_length);
             for line in forward_reader {
-                let mut forward_cgr = Vec::<Point<f64>>::new();
+                let mut line_bytes: Vec<FixedAscii<1>> = (&line).to_ascii_uppercase()
+                    .chars()
+                    .map(|base| FixedAscii::<1>::from_ascii(&[base as u8]).unwrap())
+                    .collect();
+                sequence_bytes.append(&mut line_bytes);
                 
-                if (&line).starts_with(">") {
+                let mut line_nucleotides = str_to_nucleotides(&line);
+                let line_len = line_nucleotides.len();
+                sequence_buffer.append(&mut line_nucleotides);
+                sequence_parsed += line_len;
+
+                if sequence_buffer.len() < sequence_buffer.capacity() && 
+                sequence_parsed < sequence_len {
                     continue;
                 }
+
+                let mut forward_cgr = Vec::<Point<f64>>::with_capacity(sequence_buffer.len());
         
-                for base in str_to_nucleotides(&line) {
+                for base in sequence_buffer {
                     prev_point = prev_point + ((cgr_edges[&base] - prev_point) / 2.0);
                     forward_cgr.push(prev_point);
                 }
 
-                let sequence_bytes: Vec<FixedAscii<1>> = (&line).to_ascii_uppercase()
-                    .chars()
-                    .map(|base| FixedAscii::<1>::from_ascii(&[base as u8]).unwrap())
-                    .collect();
                 let seq_arr = Array1::from(sequence_bytes);
                 ds_sequence.write_slice(&seq_arr, idx..(idx + seq_arr.len()))?;
 
@@ -340,7 +350,9 @@ impl BufferedChaosGameRepresentation {
                 let forward_coords: &[[f64; 2]] = &forward_coords;
                 let forward_arr = arr2(forward_coords);
                 ds_forward_cgr.write_slice(&forward_arr, (idx..(idx + seq_arr.len()), ..) )?;
-
+                
+                sequence_buffer = Vec::<Nucleotide>::with_capacity(chunk_length);
+                sequence_bytes = Vec::<FixedAscii<1>>::with_capacity(chunk_length);
                 idx += seq_arr.len();
             }
 
@@ -366,15 +378,23 @@ impl BufferedChaosGameRepresentation {
 
             // calculate and write backward cgr
             let mut prev_point = Point { x: 0.5, y: 0.5 };
-            let mut idx = len;
+            let mut idx = sequence_len;
+            let mut sequence_parsed = 0;
+            let mut sequence_buffer = Vec::<Nucleotide>::with_capacity(chunk_length);
             for line in backward_reader {
-                let mut backward_cgr = Vec::<Point<f64>>::new();
+                let mut line_nucleotides = str_to_nucleotides(&line);
+                let line_len = line_nucleotides.len();
+                sequence_buffer.append(&mut line_nucleotides);
+                sequence_parsed += line_len;
 
-                if (&line).starts_with(">") {
+                if sequence_buffer.len() < sequence_buffer.capacity() && 
+                sequence_parsed < sequence_len {
                     continue;
                 }
+                
+                let mut backward_cgr = Vec::<Point<f64>>::new();
     
-                for base in str_to_nucleotides(&line) {
+                for base in sequence_buffer {
                     prev_point = prev_point + ((cgr_edges[&base] - prev_point) / 2.0);
                     backward_cgr.push(prev_point);
                 }
@@ -385,10 +405,11 @@ impl BufferedChaosGameRepresentation {
                     .collect();
                 let backward_coords: &[[f64; 2]] = &backward_coords;
                 let backward_arr = arr2(backward_coords);
-                let segement_length = backward_arr.shape()[0];
-                ds_backward_cgr.write_slice(&backward_arr, ((idx - segement_length)..idx, ..))?;
+                let segment_length = backward_arr.shape()[0];
+                ds_backward_cgr.write_slice(&backward_arr, ((idx - segment_length)..idx, ..))?;
 
-                idx -= segement_length;
+                sequence_buffer = Vec::<Nucleotide>::with_capacity(chunk_length);
+                idx -= segment_length;
             }
 
             let attr = ds_backward_cgr.new_attr::<f64>()
