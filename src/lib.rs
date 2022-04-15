@@ -18,7 +18,7 @@ use rand::{
     thread_rng, 
 };
 
-use crate::fasta::Fasta;
+use crate::fasta::{Fasta, FastaSequence};
 
 
 #[derive(Debug, Hash, Copy, Clone, PartialEq, Eq)]
@@ -263,23 +263,29 @@ impl BufferedChaosGameRepresentation {
     pub fn build_cgrs_and_write_to_hdf5(&self, 
         filename: &Path, 
         chunk_length: usize) -> hdf5::Result<(), hdf5::Error> {
-            let select_ids = self.get_fasta().get_sequence_ids();
-            self.build_select_cgrs_and_write_to_hdf5(filename, chunk_length, select_ids)
+            let sequence_ids = self.get_fasta().get_sequence_ids();
+            self.build_select_cgrs_and_write_to_hdf5(filename, chunk_length, sequence_ids)
     }
     
     pub fn build_select_cgrs_and_write_to_hdf5(&self, 
         filename: &Path, 
         chunk_length: usize, 
-        select_ids: Vec<&str>) -> hdf5::Result<(), hdf5::Error> {
+        sequence_ids: Vec<&str>) -> hdf5::Result<(), hdf5::Error> {
         use Nucleotide::*;
         let file = hdf5::File::create(filename)?;
 
         let cgr_edges: HashMap<Nucleotide, Point<f64>> = Self::get_cgr_edges();
         let str_to_nucleotides = Self::str_to_nucleotides;
         
-        for sequence_id in select_ids {
-            let sequence = self.get_fasta().get_sequence_by_id(sequence_id)
-                .expect("Sequence ID not found.");
+        let mut sequences = Vec::<&FastaSequence>::with_capacity(sequence_ids.len());
+        for sequence_id in sequence_ids.clone() {
+            let fasta_seq = self.get_fasta()
+                .get_sequence_by_id(sequence_id)
+                .expect(&format!("Entered sequence ID: {sequence_id} not found"));
+            sequences.push(fasta_seq);
+        }
+        
+        for (sequence_id, sequence) in sequence_ids.into_iter().zip(sequences.into_iter()) {
             let sequence_len = sequence.get_sequence_length() as usize;
             println!("Writing sequence {} of length {} to HDF5 file.", sequence_id, sequence_len);
 

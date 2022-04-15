@@ -55,3 +55,17 @@ pub fn buffered_cgr_test() {
     let filepath_hdf5 = Path::new("./tests/data/single.h5");
     cgr_buf.build_cgrs_and_write_to_hdf5(filepath_hdf5, 10).expect("Error in HDF5 file creation.");
 }
+
+
+#[test]
+#[should_panic]
+pub fn test_invalid_sequence_id() {
+    let filepath = Path::new("./tests/data/multi_fasta.fa");
+
+    let cgr_buf = BufferedChaosGameRepresentation::new(filepath);
+    let sequence_ids = vec![
+        "Boo!"
+    ];
+    let filepath_hdf5 = Path::new("./tests/data/multi.h5");
+    cgr_buf.build_select_cgrs_and_write_to_hdf5(filepath_hdf5, 10, sequence_ids).expect("Error in HDF5 file creation.");
+}
