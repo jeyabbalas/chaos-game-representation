@@ -16,19 +16,10 @@
         <script type="importmap">
             {
                 "imports": {
-                    "pako": "https://cdn.jsdelivr.net/npm/pako@2.0.4/dist/pako.esm.mjs",
-                    "hdf5": "https://cdn.jsdelivr.net/npm/jsfive@0.3.7/dist/hdf5.js"
+                    "hdf5": "https://cdn.jsdelivr.net/npm/h5wasm@latest/dist/hdf5_hl.js"
                 }
             }
         </script>
-        <script type="module">
-            import * as pako from "pako";
-            import * as hdf5 from "hdf5";
-
-            const test = { my: 'super', puper: [456, 567], awesome: 'pako' };
-            const compressed = pako.deflate(JSON.stringify(test));
-            const restored = JSON.parse(pako.inflate(compressed, { to: 'string' }));
-            console.log(restored);
-        </script>
+        <script type="module" src="index.js"></script>
     </body>
 </html>
