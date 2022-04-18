@@ -1,8 +1,12 @@
 pub mod fasta;
 
-use std::collections::HashMap;
-use std::path::Path;
-use std::ops::{Add, Div, Sub};
+use std::{
+    collections::HashMap,
+    env, 
+    error::Error, 
+    path::Path,
+    ops::{Add, Div, Sub}
+};
 
 use hdf5::{self, types::FixedAscii};
 use ndarray::{Array1, arr2};
@@ -458,3 +462,60 @@ impl BufferedChaosGameRepresentation {
     }
 }
 
+pub struct Config {
+    filename_fasta: String, 
+    filename_hdf5: String, 
+    chunk_length: usize, 
+    sequence_ids: Vec<String>, 
+}
+
+impl Config {
+    pub fn new(mut args: env::Args) -> Result<Self, &'static str> {
+        args.next();
+
+        let filename_fasta = match args.next() {
+            Some(ff) => {ff}, 
+            None => {return Err("Error: input fasta file not specified.");}, 
+        };
+
+        let filename_hdf5 = match args.next() {
+            Some(hf) => {hf}, 
+            None => {return Err("Error: output HDF5 file not specified.");}, 
+        };
+
+        let chunk_length = match args.next() {
+            Some(len) => {len.parse().unwrap()}, 
+            None => {return Err("Error: HDF5 file chunk length not specified.");}, 
+        };
+
+        let sequence_ids: Vec<String> = match args.next() {
+            Some(ids) => {
+                ids.split(",").into_iter().map(|s| s.to_string()).collect()
+            },
+            None => {return Err("Error: list of fasta sequences to write to HDF5 file not specified.");}, 
+        };
+
+        println!("Input file: {filename_fasta}");
+        println!("Output file: {filename_hdf5}");
+        println!("HDF5 file chunk length: {chunk_length}");
+        println!("Sequences to write to HDF5 file: {}.\n", sequence_ids.join(", "));
+
+        Ok(Self{
+            filename_fasta, 
+            filename_hdf5, 
+            chunk_length, 
+            sequence_ids, 
+        })
+    }
+}
+
+pub fn run(config: Config) -> Result<(), Box<dyn Error>> {
+    let filepath = Path::new(&config.filename_fasta);
+    let filepath_hdf5 = Path::new(&config.filename_hdf5);
+
+    let cgr_buf = BufferedChaosGameRepresentation::new(filepath);
+    let sequence_ids: Vec<&str> = config.sequence_ids.iter().map(|s| s.as_str()).collect();
+    cgr_buf.build_select_cgrs_and_write_to_hdf5(filepath_hdf5, config.chunk_length, sequence_ids)?;
+
+    Ok(())
+}
