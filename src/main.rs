@@ -9,7 +9,7 @@ fn main() {
     });
 
     if let Err(e) = chaos_game_representation::run(config) {
-        eprintln!("Error while reading input file: {}.", e);
+        eprintln!("Error while constructing CGR and writing to HDF5 file: {}.", e);
         process::exit(1);
     }
 }
