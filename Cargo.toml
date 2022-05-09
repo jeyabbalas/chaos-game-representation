@@ -3,13 +3,9 @@ name = "chaos-game-representation"
 version = "0.1.0"
 authors = ["Jeya Balaji Balasubramanian <jeyabbalas@gmail.com>"]
 license = "MIT"
-license-file = "LICENSE.txt"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-hdf5 = { version = "0.8.1", features = ["blosc"] }
-ndarray = "0.15.4"
-plotters = "0.3"
 rand = "0.8.5"

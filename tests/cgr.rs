@@ -1,6 +1,5 @@
 use chaos_game_representation::{
     BufferedChaosGameRepresentation, 
-    ChaosGameRepresentation, 
     Point
 };
 
@@ -34,26 +33,13 @@ pub fn divide_test() {
 
 
 #[test]
-pub fn cgr_test() {
-    let filename = "./data/egfr/egfr.fa";
-    //let filename = "./data/grch37/hg19.fa";
-
-    let filepath = Path::new(filename);
-    let outdir = Path::new("./data/figures");
-    let cgr = ChaosGameRepresentation::from_fasta_file(filepath);
-    cgr.plot(outdir, 1024, 30).expect("Error in plotting");
-}
-
-
-#[test]
 pub fn buffered_cgr_test() {
-    //let filepath = Path::new("./tests/data/multi_fasta.fa");
-    let filepath = Path::new("./tests/data/single_fasta.fa");
+    let filepath = Path::new("./tests/data/multi_fasta.fa");
+    //let filepath = Path::new("./tests/data/single_fasta.fa");
 
     let cgr_buf = BufferedChaosGameRepresentation::new(filepath);
-    //let filepath_hdf5 = Path::new("./tests/data/multi.h5");
-    let filepath_hdf5 = Path::new("./tests/data/single.h5");
-    cgr_buf.build_cgrs_and_write_to_hdf5(filepath_hdf5, 10).expect("Error in HDF5 file creation.");
+    let output_dir = Path::new("./tests/data/output/");
+    cgr_buf.build_cgrs_and_write_to_binary_file(output_dir).expect("Error in CGR creation.");
 }
 
 
@@ -66,6 +52,21 @@ pub fn test_invalid_sequence_id() {
     let sequence_ids = vec![
         "Boo!"
     ];
-    let filepath_hdf5 = Path::new("./tests/data/multi.h5");
-    cgr_buf.build_select_cgrs_and_write_to_hdf5(filepath_hdf5, 10, sequence_ids).expect("Error in HDF5 file creation.");
+    let output_dir = Path::new("./tests/data/output/");
+    cgr_buf.build_select_cgrs_and_write_to_binary_file(output_dir, sequence_ids).expect("Error in CGR creation.");
+}
+
+
+#[test]
+pub fn test_temp() {
+    use std::fs::File;
+    use std::io::prelude::*;
+
+    let mut file = File::create("test_float").expect("Error creating file");
+    let floats = [0.252627_f64, 0.599934, 0.999999, 0.01010101];
+    let mut msg = Vec::<u8>::with_capacity(floats.len() * 8);
+    for float in floats.iter() {
+        msg.extend_from_slice(&float.to_be_bytes());
+    }
+    file.write_all(&msg).expect("Trouble writing");
 }
