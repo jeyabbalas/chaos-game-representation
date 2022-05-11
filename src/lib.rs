@@ -262,8 +262,8 @@ impl BufferedChaosGameRepresentation {
                     let mut backward_cgr_bytes = Vec::<u8>::with_capacity(backward_cgr.len() * CGR_DIMENSION * BYTES_IN_F64);
 
                     for point in backward_cgr.iter() {
-                        backward_cgr_bytes.extend_from_slice(&point.y.to_be_bytes());
                         backward_cgr_bytes.extend_from_slice(&point.x.to_be_bytes());
+                        backward_cgr_bytes.extend_from_slice(&point.y.to_be_bytes());
                     }
 
                     backward_cgr_bin.write_all(&backward_cgr_bytes[..])?;
